@@ -109,7 +109,7 @@ fn main() -> ExitCode {
         }
     };
     let mut reports: Vec<FileReport> = Vec::new();
-    println!("{:<28} {:>13} {:>12}", "file", "passed/run", "");
+    println!("{:<28} {:>13}", "file", "passed/run");
     for f in &files {
         let options = CompileOptions {
             superinstructions: !args.no_fuse,
