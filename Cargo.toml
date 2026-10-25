@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/wasmlet-cli", "crates/wasmlet-spec", "crates/wasmlet-bench"]
+members = [".", "crates/wasmlet-cli", "crates/wasmlet-spec", "crates/wasmlet-bench", "crates/wasmlet-fuzz"]
 resolver = "2"
 exclude = ["fixtures/rust"]
 

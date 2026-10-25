@@ -1,0 +1,19 @@
+[package]
+name = "wasmlet-fuzz"
+description = "Deterministic, stable-toolchain fuzzer for wasmlet: decoder robustness, validator agreement with wasmparser, and execution agreement with wasmi."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+wasmlet.workspace = true
+wasm-smith.workspace = true
+arbitrary.workspace = true
+wasmparser.workspace = true
+wasmi.workspace = true
+wast.workspace = true
+
+[lints]
+workspace = true
