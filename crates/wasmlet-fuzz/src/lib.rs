@@ -128,6 +128,7 @@ impl Stats {
 pub fn fuzz_config() -> Config {
     Config {
         max_call_depth: 2_000,
+        max_host_reentry: 32,
         max_value_stack: 256 * 1024,
         max_memory_pages: 64,
         max_table_elements: 100_000,

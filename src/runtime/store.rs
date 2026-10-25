@@ -19,7 +19,18 @@ use crate::types::{
 #[derive(Debug, Clone)]
 pub struct Config {
     /// Maximum nested call depth before [`Trap::CallStackExhausted`].
+    /// Counted across the whole store: guest frames suspended under a host
+    /// function that re-enters the guest count toward the same limit.
     pub max_call_depth: usize,
+    /// Maximum number of host-to-guest re-entries nested inside one
+    /// top-level call (a guest calls a host function that calls
+    /// [`Store::invoke`], and so on) before [`Trap::CallStackExhausted`].
+    /// Unlike guest-to-guest calls, each nested re-entry uses native stack,
+    /// so this cap is what keeps re-entrant recursion from overflowing the
+    /// host thread's stack. Measured cost per level: about 1.2 KiB in a
+    /// release build and 35 KiB in a debug build, so the default of 32 fits
+    /// a 2 MiB thread in either; raise it together with the thread's stack.
+    pub max_host_reentry: usize,
     /// Maximum value-stack size in 8-byte slots.
     pub max_value_stack: usize,
     /// Cap on any memory's size in pages (also bounds `memory.grow`).
@@ -36,6 +47,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             max_call_depth: 50_000,
+            max_host_reentry: 32,
             max_value_stack: 4 * 1024 * 1024,
             max_memory_pages: 16_384, // 1 GiB
             max_table_elements: 10_000_000,
@@ -176,6 +188,12 @@ pub struct Store {
     pub(crate) datas: Vec<Arc<[u8]>>,
     pub(crate) instances: Vec<Arc<InstanceData>>,
     pub(crate) fuel: Option<u64>,
+    /// Guest frames held by invocations suspended in a host function, which
+    /// count toward [`Config::max_call_depth`] for any nested invocation.
+    pub(crate) depth: usize,
+    /// Active nested invocations (one per host-to-guest re-entry, plus the
+    /// top-level call), bounded by [`Config::max_host_reentry`].
+    pub(crate) reentry: usize,
     /// Reusable value stack.
     pub(crate) stack: Vec<u64>,
 }
@@ -214,6 +232,8 @@ impl Store {
             datas: Vec::new(),
             instances: Vec::new(),
             fuel,
+            depth: 0,
+            reentry: 0,
             stack: Vec::new(),
         }
     }

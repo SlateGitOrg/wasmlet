@@ -515,3 +515,162 @@ fn values_display_and_accessors() {
         Value::ExternRef(None)
     );
 }
+
+/// A host import that re-enters the guest's export `name`, passing its
+/// arguments through and propagating the guest's trap unchanged.
+fn reentering_host(
+    slot: &Rc<Cell<Option<wasmlet::Func>>>,
+) -> impl Fn(&mut wasmlet::Caller<'_>, &[Value]) -> Result<Vec<Value>, Trap> + 'static {
+    let slot = Rc::clone(slot);
+    move |caller, args| {
+        let f = slot.get().expect("set after instantiation");
+        caller.store().invoke(f, args).map_err(|e| match e {
+            Error::Trap(t) => t,
+            other => Trap::Host(other.to_string()),
+        })
+    }
+}
+
+#[test]
+fn fuel_is_shared_with_reentrant_calls() {
+    let m = module(
+        r#"(module
+          (import "host" "spin" (func $h (param i32)))
+          (import "host" "refuel" (func $refuel))
+          (func (export "spin") (param i32)
+            (loop $l (br_if $l (local.tee 0 (i32.sub (local.get 0) (i32.const 1))))))
+          (func (export "run")
+            (call $h (i32.const 400)) (call $h (i32.const 400))
+            (call $h (i32.const 400)) (call $h (i32.const 400)))
+          (func (export "refuel_then_return") (call $refuel)))"#,
+    );
+    let mut store = Store::new(Config {
+        fuel: Some(100_000),
+        ..Config::default()
+    });
+    let mut linker = Linker::new();
+    let spin_slot: Rc<Cell<Option<wasmlet::Func>>> = Rc::new(Cell::new(None));
+    linker.func(
+        &mut store,
+        "host",
+        "spin",
+        FuncType::new([ValType::I32], []),
+        reentering_host(&spin_slot),
+    );
+    linker.func(
+        &mut store,
+        "host",
+        "refuel",
+        FuncType::new([], []),
+        |caller, _| {
+            caller.store().set_fuel(Some(7));
+            Ok(vec![])
+        },
+    );
+    let inst = linker.instantiate(&mut store, &m).unwrap();
+    let spin = store.instance_func(inst, "spin").unwrap();
+    spin_slot.set(Some(spin));
+    let run = store.instance_func(inst, "run").unwrap();
+
+    // Fuel burned by one spin, called directly.
+    store.invoke(spin, &[Value::I32(400)]).unwrap();
+    let one_spin = 100_000 - store.fuel().unwrap();
+    assert!(one_spin >= 400);
+
+    // `run` pays for its four calls plus the four nested spins.
+    store.set_fuel(Some(100_000));
+    store.invoke(run, &[]).unwrap();
+    assert_eq!(100_000 - store.fuel().unwrap(), 4 * one_spin + 4);
+
+    // A budget that covers two and a half nested spins runs out inside the
+    // third, and the store reports it as spent rather than refunded.
+    store.set_fuel(Some(2 * one_spin + one_spin / 2));
+    assert_eq!(store.invoke(run, &[]), Err(Error::Trap(Trap::OutOfFuel)));
+    assert_eq!(store.fuel(), Some(0));
+
+    // Fuel set by a host function during a call is what the guest continues with.
+    store.set_fuel(Some(1_000));
+    let refuel = store.instance_func(inst, "refuel_then_return").unwrap();
+    store.invoke(refuel, &[]).unwrap();
+    assert_eq!(store.fuel(), Some(7));
+}
+
+/// Guest `f(n)` calls host `h(n - 1)`, which re-enters `f`: one host
+/// re-entry and one guest frame per level.
+fn reentrant_recursion(config: Config) -> (Store, wasmlet::Func) {
+    let m = module(
+        r#"(module
+          (import "host" "h" (func $h (param i32) (result i32)))
+          (func (export "f") (param i32) (result i32)
+            (if (result i32) (i32.eqz (local.get 0)) (then (i32.const 0))
+              (else (i32.add (i32.const 1)
+                (call $h (i32.sub (local.get 0) (i32.const 1))))))))"#,
+    );
+    let mut store = Store::new(config);
+    let mut linker = Linker::new();
+    let slot: Rc<Cell<Option<wasmlet::Func>>> = Rc::new(Cell::new(None));
+    linker.func(
+        &mut store,
+        "host",
+        "h",
+        FuncType::new([ValType::I32], [ValType::I32]),
+        reentering_host(&slot),
+    );
+    let inst = linker.instantiate(&mut store, &m).unwrap();
+    let f = store.instance_func(inst, "f").unwrap();
+    slot.set(Some(f));
+    (store, f)
+}
+
+#[test]
+fn call_depth_is_store_wide_across_host_reentry() {
+    // `f(n)` holds n + 1 guest frames spread over n nested invocations; the
+    // limit admits `max_call_depth + 1` frames, the same as for plain
+    // guest recursion. The re-entry cap is raised so the depth limit is
+    // what trips.
+    let (mut store, f) = reentrant_recursion(Config {
+        max_call_depth: 20,
+        max_host_reentry: 1_000,
+        ..Config::default()
+    });
+    assert_eq!(
+        store.invoke(f, &[Value::I32(20)]).unwrap(),
+        vec![Value::I32(20)]
+    );
+    assert_eq!(
+        store.invoke(f, &[Value::I32(21)]),
+        Err(Error::Trap(Trap::CallStackExhausted))
+    );
+    // The counters unwind with the trap: the store is usable afterwards.
+    assert_eq!(
+        store.invoke(f, &[Value::I32(20)]).unwrap(),
+        vec![Value::I32(20)]
+    );
+}
+
+#[test]
+fn deep_host_reentry_traps_instead_of_overflowing_the_native_stack() {
+    // Default limits on a 2 MiB thread: without a cap on nested host
+    // re-entry this aborts the whole process with a native stack overflow.
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(|| {
+            let (mut store, f) = reentrant_recursion(Config::default());
+            assert_eq!(
+                store.invoke(f, &[Value::I32(100_000)]),
+                Err(Error::Trap(Trap::CallStackExhausted))
+            );
+            let n = Config::default().max_host_reentry as i32;
+            assert_eq!(
+                store.invoke(f, &[Value::I32(n)]).unwrap(),
+                vec![Value::I32(n)]
+            );
+            assert_eq!(
+                store.invoke(f, &[Value::I32(n + 1)]),
+                Err(Error::Trap(Trap::CallStackExhausted))
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

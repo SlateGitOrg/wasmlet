@@ -51,6 +51,13 @@ pub(crate) fn invoke(store: &mut Store, func: u32, args: &[u64]) -> Result<Vec<u
         }
         FuncInst::Wasm { instance, code, .. } => (*instance, Arc::clone(code)),
     };
+    // A nested invoke (a host function re-entering the guest) recurses on
+    // the native stack, so its nesting is capped separately; and it enters
+    // with the guest frames of every suspended outer call already counted.
+    if store.reentry > store.config.max_host_reentry || store.depth > store.config.max_call_depth {
+        return Err(Trap::CallStackExhausted);
+    }
+    store.reentry += 1;
     let mut stack = std::mem::take(&mut store.stack);
     let mut fuel = store.fuel.unwrap_or(u64::MAX);
     let result = execute(store, &mut stack, &mut fuel, inst_idx, code, args);
@@ -58,6 +65,7 @@ pub(crate) fn invoke(store: &mut Store, func: u32, args: &[u64]) -> Result<Vec<u
         store.fuel = Some(fuel);
     }
     store.stack = stack;
+    store.reentry -= 1;
     result
 }
 
@@ -220,7 +228,10 @@ fn execute(
     mut func: Arc<CompiledFunc>,
     args: &[u64],
 ) -> Result<Vec<u64>, Trap> {
-    let max_depth = store.config.max_call_depth;
+    // Guest frames held by outer invocations suspended in host functions;
+    // the call-depth limit applies to `base + frames.len()`.
+    let base = store.depth;
+    let max_depth = store.config.max_call_depth.saturating_sub(base);
     let max_stack = store.config.max_value_stack;
     let mem_cap = store.config.max_memory_pages;
     let table_cap = store.config.max_table_elements;
@@ -354,13 +365,24 @@ fn execute(
                         .zip(ty.params())
                         .map(|(&s, &t)| from_slot(s, t))
                         .collect();
-                    let results = hf(
+                    // The host may re-enter the guest: publish this call's
+                    // remaining fuel and frame count to the store for the
+                    // nested invocation, and read the fuel back afterwards
+                    // (whatever the outcome) so nested use is not refunded.
+                    if store.fuel.is_some() {
+                        store.fuel = Some(*fuel);
+                    }
+                    store.depth = base + frames.len() + 1;
+                    let outcome = hf(
                         &mut Caller {
                             store,
                             instance: Some(inst_idx),
                         },
                         &args,
-                    )?;
+                    );
+                    store.depth = base;
+                    *fuel = store.fuel.unwrap_or(u64::MAX);
+                    let results = outcome?;
                     check_host_results(ty.results(), &results)?;
                     for r in results {
                         push!(to_slot(r));
