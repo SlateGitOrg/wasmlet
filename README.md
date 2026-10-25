@@ -302,7 +302,13 @@ The full list, with the cost of each being wrong, is in
 * **No native recursion for guest calls.** Wasm-to-wasm calls push an
   explicit frame, so deep recursion ends in a clean
   `call stack exhausted` trap governed by `Config::max_call_depth`, never in
-  a host stack overflow.
+  a host stack overflow. Re-entry through a host function (guest → host →
+  `Store::invoke` → guest) is the one path that does use native stack
+  (about 1.2 KiB per level in release, 35 KiB in debug). Its guest frames
+  count toward the same store-wide `max_call_depth`, and its nesting is
+  capped separately by `Config::max_host_reentry` (default 32). Fuel is
+  shared too, so work done inside a re-entrant call is charged to the
+  same budget.
 * **Safe Rust only** (`unsafe_code = "forbid"`), accepting the bounds-check
   cost in exchange for memory safety that does not depend on the validator
   being bug-free.

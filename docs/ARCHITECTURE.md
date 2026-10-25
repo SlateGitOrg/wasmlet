@@ -176,7 +176,12 @@ the benchmark set the pass is worth 1.18x (geometric mean; see README).
   the value stack grows on demand up to `Config::max_value_stack`. Host
   calls receive a `Caller` with `&mut Store`, so a host function may invoke
   guest functions re-entrantly (each invocation borrows the store's value
-  stack afresh).
+  stack afresh). Re-entry is store-wide for limits: before a host call the
+  interpreter publishes its frame count (`Store::depth`) and remaining fuel
+  to the store, and reads the fuel back afterwards, so nested invocations
+  share `max_call_depth` and the fuel budget with the outer call. Because
+  each re-entry recurses on the native stack, its nesting is also capped by
+  `Config::max_host_reentry`.
 * **Memory accesses** compute `addr as u32 + offset` in 64-bit arithmetic and
   compare with the memory length, so no access can wrap. Bulk operations
   check the whole range before copying, matching the 2.0 semantics where an
