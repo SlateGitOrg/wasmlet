@@ -28,11 +28,11 @@ pub const MAX_LOCALS: u64 = 50_000;
 /// Decodes a binary module.
 pub fn decode(bytes: &[u8]) -> Result<RawModule, DecodeError> {
     let mut r = Reader::new(bytes, 0);
-    let magic = r.bytes(4).map_err(|e| DecodeError::new(e.offset, "magic header not detected"))?;
+    let magic = r.bytes(4)?;
     if magic != MAGIC {
         return Err(DecodeError::new(0, "magic header not detected"));
     }
-    let version = r.bytes(4).map_err(|e| DecodeError::new(e.offset, "unknown binary version"))?;
+    let version = r.bytes(4)?;
     if u32::from_le_bytes([version[0], version[1], version[2], version[3]]) != VERSION {
         return Err(DecodeError::new(4, "unknown binary version"));
     }
@@ -439,7 +439,11 @@ fn read_block_type(r: &mut Reader<'_>) -> DResult<BlockType> {
 }
 
 fn read_memarg(r: &mut Reader<'_>) -> DResult<MemArg> {
+    let at = r.offset();
     let align = r.u32()?;
+    if align >= 32 {
+        return Err(DecodeError::new(at, "malformed memop flags"));
+    }
     let offset = r.u32()?;
     Ok(MemArg { align, offset })
 }
@@ -603,10 +607,10 @@ mod tests {
 
     #[test]
     fn header_errors() {
-        assert_eq!(decode(b"\0as").unwrap_err().message, "magic header not detected");
+        assert_eq!(decode(b"\0as").unwrap_err().message, "unexpected end");
         assert_eq!(decode(b"\0wasm\x01\0\0").unwrap_err().message, "magic header not detected");
         assert_eq!(decode(b"\0asm\x02\0\0\0").unwrap_err().message, "unknown binary version");
-        assert_eq!(decode(b"\0asm\x01\0").unwrap_err().message, "unknown binary version");
+        assert_eq!(decode(b"\0asm\x01\0").unwrap_err().message, "unexpected end");
     }
 
     #[test]

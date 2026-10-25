@@ -221,7 +221,13 @@ pub(crate) fn validate(raw: RawModule) -> VResult<Module> {
             ExternKind::Global => (ex.index as usize) < c.globals.len(),
         };
         if !ok {
-            return err(format!("unknown {} {}", ex.kind, ex.index));
+            let what = match ex.kind {
+                ExternKind::Func => "function",
+                ExternKind::Table => "table",
+                ExternKind::Memory => "memory",
+                ExternKind::Global => "global",
+            };
+            return err(format!("unknown {what} {}", ex.index));
         }
     }
 
