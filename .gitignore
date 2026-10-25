@@ -1,0 +1,6 @@
+/target
+*.profraw
+*.profdata
+/lcov.info
+.DS_Store
+/fuzz-artifacts/
