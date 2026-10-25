@@ -1,0 +1,16 @@
+[package]
+name = "wasmlet-bench"
+description = "Benchmarks wasmlet against wasmi on a few fixed programs."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+wasmlet.workspace = true
+wasmi.workspace = true
+wat.workspace = true
+
+[lints]
+workspace = true
