@@ -1,0 +1,13 @@
+# Guest programs compiled to wasm32-wasip1 for wasmlet's demos, tests and
+# benchmarks. Built by scripts/build-fixtures.sh; outputs are committed to
+# fixtures/wasm/ so the main build never needs the wasm target.
+[workspace]
+members = ["apps", "kernels"]
+resolver = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
