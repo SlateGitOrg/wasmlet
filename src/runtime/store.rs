@@ -26,7 +26,8 @@ pub struct Config {
     pub max_memory_pages: u32,
     /// Cap on any table's size in elements.
     pub max_table_elements: u32,
-    /// Fuel budget: every executed branch and call costs one unit.
+    /// Fuel budget: every executed branch (`br`, `br_if`, `br_table`, `if`)
+    /// and call costs one unit.
     /// `None` disables metering.
     pub fuel: Option<u64>,
 }

@@ -31,6 +31,7 @@
 pub mod ast;
 pub mod decode;
 mod error;
+mod fuse;
 pub mod ir;
 mod module;
 pub mod ops;
@@ -41,7 +42,7 @@ mod validate;
 pub mod wasi;
 
 pub use error::{DecodeError, Error, LinkError, Result, ValidationError};
-pub use module::{ExternType, Module};
+pub use module::{CompileOptions, ExternType, Module};
 pub use runtime::{
     Caller, Config, Extern, Func, Global, HostFunc, ImportResolver, Instance, Linker, Memory,
     Store, Table, Trap, Value,

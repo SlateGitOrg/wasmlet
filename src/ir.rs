@@ -86,6 +86,67 @@ macro_rules! define_ir {
             Const(u64),
             RefIsNull,
             RefFunc(u32),
+
+            // ---- superinstructions (see `crate::fuse`) ----
+            /// `local.get a; local.get b`
+            LocalGet2(u32, u32),
+            /// `local.get src; i32.const imm; i32.add; local.set dst`
+            /// (`i32.sub` is folded in with a negated immediate).
+            I32LocalAddImm { dst: u32, src: u32, imm: i32 },
+            /// As [`Op::I32LocalAddImm`] for i64, with a sign-extended immediate.
+            I64LocalAddImm { dst: u32, src: u32, imm: i32 },
+            /// `i32.const imm; i32.add` (and `i32.sub` with `-imm`).
+            I32AddImm(i32),
+            /// `i32.const imm; i32.mul`
+            I32MulImm(i32),
+            /// `i32.const imm; i32.and`
+            I32AndImm(i32),
+            /// `i32.const imm; i32.shl` (shift pre-masked to 0..=31)
+            I32ShlImm(u32),
+            /// `i32.const imm; i32.shr_s`
+            I32ShrSImm(u32),
+            /// `i32.const imm; i32.shr_u`
+            I32ShrUImm(u32),
+            /// `i64.const imm; i64.add` (and `i64.sub` with `-imm`).
+            I64AddImm(i64),
+            /// `i64.const imm; i64.mul`
+            I64MulImm(i64),
+            /// `i64.const imm; i64.and`
+            I64AndImm(i64),
+            /// `i64.const imm; i64.shl` (shift pre-masked to 0..=63)
+            I64ShlImm(u32),
+            /// `i64.const imm; i64.shr_s`
+            I64ShrSImm(u32),
+            /// `i64.const imm; i64.shr_u`
+            I64ShrUImm(u32),
+            /// Compare-and-branch: pops two operands and jumps to `target`
+            /// when the comparison holds. Produced from `<cmp>; br_if` (with
+            /// nothing to unwind) and from `<cmp>; if` (with the comparison
+            /// inverted).
+            BrIfI32Eq { target: u32 },
+            BrIfI32Ne { target: u32 },
+            BrIfI32LtS { target: u32 },
+            BrIfI32LtU { target: u32 },
+            BrIfI32GtS { target: u32 },
+            BrIfI32GtU { target: u32 },
+            BrIfI32LeS { target: u32 },
+            BrIfI32LeU { target: u32 },
+            BrIfI32GeS { target: u32 },
+            BrIfI32GeU { target: u32 },
+            BrIfI64Eq { target: u32 },
+            BrIfI64Ne { target: u32 },
+            BrIfI64LtS { target: u32 },
+            BrIfI64LtU { target: u32 },
+            BrIfI64GtS { target: u32 },
+            BrIfI64GtU { target: u32 },
+            BrIfI64LeS { target: u32 },
+            BrIfI64LeU { target: u32 },
+            BrIfI64GeS { target: u32 },
+            BrIfI64GeU { target: u32 },
+            /// Pops an i64; jumps when it is zero.
+            BrIfI64Eqz { target: u32 },
+            /// Pops an i64; jumps when it is non-zero.
+            BrIfI64Nez { target: u32 },
             $($name,)*
         }
 
@@ -101,6 +162,53 @@ macro_rules! define_ir {
 crate::for_each_numop!(define_ir);
 
 const _: () = assert!(std::mem::size_of::<Op>() == 16);
+
+macro_rules! with_targets {
+    ($self:ident, $t:ident => $e:expr, $other:expr) => {
+        match $self {
+            Op::Br { target: $t, .. }
+            | Op::BrIfNez { target: $t, .. }
+            | Op::BrIfEqz { target: $t }
+            | Op::BrTarget { target: $t, .. }
+            | Op::BrIfI32Eq { target: $t }
+            | Op::BrIfI32Ne { target: $t }
+            | Op::BrIfI32LtS { target: $t }
+            | Op::BrIfI32LtU { target: $t }
+            | Op::BrIfI32GtS { target: $t }
+            | Op::BrIfI32GtU { target: $t }
+            | Op::BrIfI32LeS { target: $t }
+            | Op::BrIfI32LeU { target: $t }
+            | Op::BrIfI32GeS { target: $t }
+            | Op::BrIfI32GeU { target: $t }
+            | Op::BrIfI64Eq { target: $t }
+            | Op::BrIfI64Ne { target: $t }
+            | Op::BrIfI64LtS { target: $t }
+            | Op::BrIfI64LtU { target: $t }
+            | Op::BrIfI64GtS { target: $t }
+            | Op::BrIfI64GtU { target: $t }
+            | Op::BrIfI64LeS { target: $t }
+            | Op::BrIfI64LeU { target: $t }
+            | Op::BrIfI64GeS { target: $t }
+            | Op::BrIfI64GeU { target: $t }
+            | Op::BrIfI64Eqz { target: $t }
+            | Op::BrIfI64Nez { target: $t } => $e,
+            _ => $other,
+        }
+    };
+}
+
+impl Op {
+    /// The code index this op may jump to, if it is a branch (including
+    /// `br_table` entries).
+    pub fn branch_target(&self) -> Option<u32> {
+        with_targets!(self, t => Some(*t), None)
+    }
+
+    /// Mutable access to the jump target, if this op is a branch.
+    pub(crate) fn branch_target_mut(&mut self) -> Option<&mut u32> {
+        with_targets!(self, t => Some(t), None)
+    }
+}
 
 /// A function body after lowering.
 #[derive(Debug, Clone)]
@@ -161,6 +269,11 @@ impl fmt::Display for DisplayOp<'_> {
             Op::BrIfEqz { target } => write!(f, "br_if_eqz @{target}"),
             Op::BrTarget { target, dk: d } => write!(f, "  -> @{target}{}", dk(d)),
             Op::Const(v) => write!(f, "const {v:#x}"),
+            op if op.branch_target().is_some() => {
+                let s = format!("{op:?}");
+                let name = s.split(' ').next().unwrap_or_default();
+                write!(f, "{name} @{}", op.branch_target().unwrap_or_default())
+            }
             other => {
                 let s = format!("{other:?}");
                 f.write_str(&s)
@@ -209,5 +322,15 @@ mod tests {
         assert!(s.contains("1: const 0x1"));
         assert!(s.contains("Return { keep: 1 }"));
         assert_eq!(f.frame_size(), 2);
+    }
+
+    #[test]
+    fn fused_branches_expose_and_print_targets() {
+        let mut op = Op::BrIfI64LtU { target: 3 };
+        assert_eq!(op.branch_target(), Some(3));
+        *op.branch_target_mut().unwrap() = 9;
+        assert_eq!(DisplayOp(&op).to_string(), "BrIfI64LtU @9");
+        assert_eq!(Op::LocalGet2(1, 2).branch_target(), None);
+        assert_eq!(DisplayOp(&Op::I32AddImm(-1)).to_string(), "I32AddImm(-1)");
     }
 }

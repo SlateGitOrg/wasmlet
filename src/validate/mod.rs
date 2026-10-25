@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::ast::{ConstExpr, DataMode, ElemMode, ImportDesc, Instr, RawModule};
 use crate::error::ValidationError;
-use crate::module::Module;
+use crate::module::{CompileOptions, Module};
 use crate::types::{
     ExternKind, FuncType, GlobalType, Limits, MemoryType, Mutability, TableType, ValType, MAX_PAGES,
 };
@@ -113,7 +113,7 @@ fn collect_refs(expr: &ConstExpr, refs: &mut HashSet<u32>) {
 }
 
 /// Validates a decoded module and compiles its function bodies.
-pub(crate) fn validate(raw: RawModule) -> VResult<Module> {
+pub(crate) fn validate(raw: RawModule, options: CompileOptions) -> VResult<Module> {
     let mut c = Context {
         types: raw.types.clone(),
         data_count: raw.data_count,
@@ -234,7 +234,7 @@ pub(crate) fn validate(raw: RawModule) -> VResult<Module> {
     let mut compiled = Vec::with_capacity(raw.code.len());
     for (i, body) in raw.code.iter().enumerate() {
         let type_idx = raw.funcs[i];
-        let f = func::compile(&c, type_idx, body).map_err(|mut e| {
+        let f = func::compile(&c, type_idx, body, options.superinstructions).map_err(|mut e| {
             e.func = Some((imported_funcs + i) as u32);
             e
         })?;

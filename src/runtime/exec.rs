@@ -271,6 +271,17 @@ fn execute(
             *fuel -= 1;
         }};
     }
+    macro_rules! cmp_br {
+        ($conv:ident, $target:expr, |$a:ident, $b:ident| $e:expr) => {{
+            burn!();
+            sp -= 2;
+            let $a = $conv(stack[sp]);
+            let $b = $conv(stack[sp + 1]);
+            if $e {
+                pc = $target as usize;
+            }
+        }};
+    }
     macro_rules! branch {
         ($target:expr, $dk:expr) => {{
             let DropKeep { drop, keep } = $dk;
@@ -375,6 +386,7 @@ fn execute(
                 }
             }
             Op::BrIfEqz { target } => {
+                burn!();
                 if pop!() as u32 == 0 {
                     pc = target as usize;
                 }
@@ -551,6 +563,64 @@ fn execute(
                 m[d as usize..(d + n) as usize].fill(v);
             }
             Op::Const(v) => push!(v),
+
+            // ---- superinstructions ----
+            Op::LocalGet2(a, b) => {
+                stack[sp] = stack[fp + a as usize];
+                stack[sp + 1] = stack[fp + b as usize];
+                sp += 2;
+            }
+            Op::I32LocalAddImm { dst, src, imm } => {
+                stack[fp + dst as usize] = fi32(i32_(stack[fp + src as usize]).wrapping_add(imm));
+            }
+            Op::I64LocalAddImm { dst, src, imm } => {
+                stack[fp + dst as usize] =
+                    fi64(i64_(stack[fp + src as usize]).wrapping_add(i64::from(imm)));
+            }
+            Op::I32AddImm(c) => unop!(i32_, fi32, |a| a.wrapping_add(c)),
+            Op::I32MulImm(c) => unop!(i32_, fi32, |a| a.wrapping_mul(c)),
+            Op::I32AndImm(c) => unop!(i32_, fi32, |a| a & c),
+            Op::I32ShlImm(c) => unop!(u32_, fu32, |a| a << c),
+            Op::I32ShrSImm(c) => unop!(i32_, fi32, |a| a >> c),
+            Op::I32ShrUImm(c) => unop!(u32_, fu32, |a| a >> c),
+            Op::I64AddImm(c) => unop!(i64_, fi64, |a| a.wrapping_add(c)),
+            Op::I64MulImm(c) => unop!(i64_, fi64, |a| a.wrapping_mul(c)),
+            Op::I64AndImm(c) => unop!(i64_, fi64, |a| a & c),
+            Op::I64ShlImm(c) => unop!(u64_, fu64, |a| a << c),
+            Op::I64ShrSImm(c) => unop!(i64_, fi64, |a| a >> c),
+            Op::I64ShrUImm(c) => unop!(u64_, fu64, |a| a >> c),
+            Op::BrIfI32Eq { target } => cmp_br!(u32_, target, |a, b| a == b),
+            Op::BrIfI32Ne { target } => cmp_br!(u32_, target, |a, b| a != b),
+            Op::BrIfI32LtS { target } => cmp_br!(i32_, target, |a, b| a < b),
+            Op::BrIfI32LtU { target } => cmp_br!(u32_, target, |a, b| a < b),
+            Op::BrIfI32GtS { target } => cmp_br!(i32_, target, |a, b| a > b),
+            Op::BrIfI32GtU { target } => cmp_br!(u32_, target, |a, b| a > b),
+            Op::BrIfI32LeS { target } => cmp_br!(i32_, target, |a, b| a <= b),
+            Op::BrIfI32LeU { target } => cmp_br!(u32_, target, |a, b| a <= b),
+            Op::BrIfI32GeS { target } => cmp_br!(i32_, target, |a, b| a >= b),
+            Op::BrIfI32GeU { target } => cmp_br!(u32_, target, |a, b| a >= b),
+            Op::BrIfI64Eq { target } => cmp_br!(u64_, target, |a, b| a == b),
+            Op::BrIfI64Ne { target } => cmp_br!(u64_, target, |a, b| a != b),
+            Op::BrIfI64LtS { target } => cmp_br!(i64_, target, |a, b| a < b),
+            Op::BrIfI64LtU { target } => cmp_br!(u64_, target, |a, b| a < b),
+            Op::BrIfI64GtS { target } => cmp_br!(i64_, target, |a, b| a > b),
+            Op::BrIfI64GtU { target } => cmp_br!(u64_, target, |a, b| a > b),
+            Op::BrIfI64LeS { target } => cmp_br!(i64_, target, |a, b| a <= b),
+            Op::BrIfI64LeU { target } => cmp_br!(u64_, target, |a, b| a <= b),
+            Op::BrIfI64GeS { target } => cmp_br!(i64_, target, |a, b| a >= b),
+            Op::BrIfI64GeU { target } => cmp_br!(u64_, target, |a, b| a >= b),
+            Op::BrIfI64Eqz { target } => {
+                burn!();
+                if pop!() == 0 {
+                    pc = target as usize;
+                }
+            }
+            Op::BrIfI64Nez { target } => {
+                burn!();
+                if pop!() != 0 {
+                    pc = target as usize;
+                }
+            }
             Op::RefIsNull => unop!(u64_, fbool, |a| a == 0),
             Op::RefFunc(f) => push!(u64::from(inst.func_addrs[f as usize]) + 1),
 

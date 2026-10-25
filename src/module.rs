@@ -53,11 +53,33 @@ impl ExternType {
     }
 }
 
+/// Compilation settings for [`Module::with_options`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompileOptions {
+    /// Fuse frequent op sequences into superinstructions (see the
+    /// architecture notes). On by default; turning it off is useful for
+    /// measuring its effect and for differential testing.
+    pub superinstructions: bool,
+}
+
+impl Default for CompileOptions {
+    fn default() -> Self {
+        CompileOptions {
+            superinstructions: true,
+        }
+    }
+}
+
 impl Module {
-    /// Decodes, validates and compiles a binary module.
+    /// Decodes, validates and compiles a binary module with default options.
     pub fn new(bytes: &[u8]) -> Result<Module> {
+        Module::with_options(bytes, CompileOptions::default())
+    }
+
+    /// Decodes, validates and compiles a binary module.
+    pub fn with_options(bytes: &[u8], options: CompileOptions) -> Result<Module> {
         let raw = crate::decode::decode(bytes)?;
-        Ok(crate::validate::validate(raw)?)
+        Ok(crate::validate::validate(raw, options)?)
     }
 
     /// Imports as `(module, name, type)`.

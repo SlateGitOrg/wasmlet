@@ -58,7 +58,12 @@ struct Compiler<'c> {
     max_height: usize,
 }
 
-pub(super) fn compile(c: &Context, type_idx: u32, body: &FuncBody) -> VResult<CompiledFunc> {
+pub(super) fn compile(
+    c: &Context,
+    type_idx: u32,
+    body: &FuncBody,
+    superinstructions: bool,
+) -> VResult<CompiledFunc> {
     let ft = c.type_at(type_idx)?;
     let mut locals: Vec<ValType> = ft.params().to_vec();
     for &(n, t) in &body.locals {
@@ -94,13 +99,18 @@ pub(super) fn compile(c: &Context, type_idx: u32, body: &FuncBody) -> VResult<Co
         return err("unexpected end of function");
     }
     let params = ft.params().len() as u32;
+    let code = if superinstructions {
+        crate::fuse::fuse(comp.code)
+    } else {
+        comp.code
+    };
     Ok(CompiledFunc {
         type_idx,
         params,
         locals: comp.locals.len() as u32 - params,
         results: ft.results().len() as u32,
         max_stack: comp.max_height as u32 + 1,
-        code: comp.code.into_boxed_slice(),
+        code: code.into_boxed_slice(),
     })
 }
 
