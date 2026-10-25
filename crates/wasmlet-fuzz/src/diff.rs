@@ -12,7 +12,7 @@
 //! *inconclusive* and abandoned, never as a mismatch.
 
 use wasmi::TrapCode;
-use wasmlet::{Extern, Linker, Module, Store, Trap, Value};
+use wasmlet::{CompileOptions, Extern, Linker, Module, Store, Trap, Value};
 
 use crate::{catch, fuzz_config, reference_valid, FindingKind, Stats, FUEL};
 
@@ -274,6 +274,7 @@ pub fn compare(bytes: &[u8], stats: &mut Stats) {
     stats.accepted += 1;
     let result = catch(|| {
         let mut stats = Stats::default();
+        check_fusion(bytes, &module, &mut stats);
         run_pair(&module, bytes, &mut stats);
         stats
     });
@@ -289,6 +290,70 @@ pub fn compare(bytes: &[u8], stats: &mut Stats) {
             format!("execution panicked: {msg}"),
             bytes,
         ),
+    }
+}
+
+/// Runs every export of `module` in wasmlet: the instantiation outcome, then
+/// each call's outcome, then the final exported state. Stops at the first
+/// resource limit, which is itself part of the trace.
+fn wasmlet_trace(module: &Module) -> Vec<String> {
+    let mut ours = match instantiate_ours(module) {
+        Ok(o) => o,
+        Err(e) => return vec![format!("instantiate: {e:?}")],
+    };
+    let names: Vec<String> = ours
+        .store
+        .instance_exports(ours.inst)
+        .filter(|(_, e)| matches!(e, Extern::Func(_)))
+        .map(|(n, _)| n.to_owned())
+        .collect();
+    let mut trace = Vec::new();
+    for name in names {
+        let out = call_ours(&mut ours, &name);
+        let limit = out == Outcome::Limit;
+        trace.push(format!("{name}: {out:?} fuel={:?}", ours.store.fuel()));
+        if limit {
+            return trace;
+        }
+    }
+    trace.extend(
+        state_ours(&ours)
+            .into_iter()
+            .map(|(n, s)| format!("{n} = {s}")),
+    );
+    trace
+}
+
+/// The superinstruction pass must not change behaviour, including fuel use.
+pub fn check_fusion(bytes: &[u8], fused: &Module, stats: &mut Stats) {
+    let plain = match Module::with_options(
+        bytes,
+        CompileOptions {
+            superinstructions: false,
+        },
+    ) {
+        Ok(m) => m,
+        Err(e) => {
+            stats.record(
+                FindingKind::FusionMismatch,
+                format!("accepted only with fusion on: {e}"),
+                bytes,
+            );
+            return;
+        }
+    };
+    let (a, b) = (wasmlet_trace(fused), wasmlet_trace(&plain));
+    if a != b {
+        let first = a.iter().zip(&b).find(|(x, y)| x != y);
+        stats.record(
+            FindingKind::FusionMismatch,
+            format!(
+                "fused vs unfused: {first:?} (lengths {} / {})",
+                a.len(),
+                b.len()
+            ),
+            bytes,
+        );
     }
 }
 
@@ -423,6 +488,29 @@ mod tests {
         compare(&bytes, &mut s);
         assert!(s.findings.is_empty(), "{:?}", s.findings);
         assert_eq!(s.compared, 1);
+    }
+
+    #[test]
+    fn fusion_check_compares_fuel_and_state() {
+        let bytes = wat(r#"(module (global (export "g") (mut i64) (i64.const 0))
+            (func (export "count") (result i32) (local i32)
+              (block (loop
+                (br_if 1 (i32.ge_u (local.get 0) (i32.const 50)))
+                (local.set 0 (i32.add (local.get 0) (i32.const 1)))
+                (global.set 0 (i64.add (global.get 0) (i64.const 3)))
+                (br 0)))
+              local.get 0)
+            (func (export "spin") (loop (br 0))))"#);
+        let module = Module::new(&bytes).unwrap();
+        let trace = wasmlet_trace(&module);
+        assert!(
+            trace[0].starts_with("count: Values([I32(50)]) fuel=Some("),
+            "{trace:?}"
+        );
+        assert!(trace[1].starts_with("spin: Limit"), "{trace:?}");
+        let mut s = Stats::default();
+        check_fusion(&bytes, &module, &mut s);
+        assert!(s.findings.is_empty(), "{:?}", s.findings);
     }
 
     #[test]

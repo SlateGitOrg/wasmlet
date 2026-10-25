@@ -12,6 +12,10 @@
 //!   runs every exported function in both wasmlet and `wasmi`, and compares
 //!   results, traps, exported globals and exported memories.
 //!
+//! Both campaigns also run every accepted module with and without the
+//! superinstruction pass and require identical behaviour (results, traps,
+//! fuel consumed, final exported state).
+//!
 //! Any panic, verdict disagreement or execution mismatch is a [`Finding`]; the
 //! input bytes are kept so the CLI can save them for reproduction.
 
@@ -74,6 +78,8 @@ pub enum FindingKind {
     VerdictMismatch,
     /// wasmlet and wasmi disagree on execution.
     ExecMismatch,
+    /// wasmlet behaves differently with and without superinstructions.
+    FusionMismatch,
 }
 
 impl fmt::Display for FindingKind {
@@ -82,6 +88,7 @@ impl fmt::Display for FindingKind {
             FindingKind::Panic => "panic",
             FindingKind::VerdictMismatch => "verdict-mismatch",
             FindingKind::ExecMismatch => "exec-mismatch",
+            FindingKind::FusionMismatch => "fusion-mismatch",
         })
     }
 }
@@ -300,6 +307,13 @@ pub fn check_input(bytes: &[u8], stats: &mut Stats) {
                     stats.record(
                         FindingKind::Panic,
                         format!("execution panicked: {msg}"),
+                        bytes,
+                    );
+                }
+                if let Err(msg) = catch(|| diff::check_fusion(bytes, &module, stats)) {
+                    stats.record(
+                        FindingKind::Panic,
+                        format!("fusion check panicked: {msg}"),
                         bytes,
                     );
                 }
