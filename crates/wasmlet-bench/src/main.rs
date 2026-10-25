@@ -4,8 +4,9 @@
 //! wasmlet-bench [--runs N] [--quick]
 //! ```
 //!
-//! For every workload both engines compile the same bytes, instantiate, and
-//! call the same export with the same argument. Reported times are the median
+//! For every workload wasmlet (with and without superinstructions) and wasmi
+//! compile the same bytes, instantiate, and call the same export with the
+//! same argument. Reported times are the median
 //! of N runs (default 5) of the call alone; compile times are reported
 //! separately. Results of the two engines are compared and the process exits
 //! non-zero on any disagreement, so the benchmark doubles as a differential
@@ -97,14 +98,16 @@ fn run_wasmlet(
     w: &Workload,
     arg: Arg,
     runs: usize,
+    superinstructions: bool,
 ) -> Result<(Duration, Duration, String), String> {
-    use wasmlet::{Linker, Module, Store, Value};
+    use wasmlet::{CompileOptions, Linker, Module, Store, Value};
+    let options = CompileOptions { superinstructions };
     let mut compile = Vec::new();
     let mut exec = Vec::new();
     let mut result = String::new();
     for _ in 0..runs {
         let t = Instant::now();
-        let module = Module::new(&w.wasm).map_err(|e| e.to_string())?;
+        let module = Module::with_options(&w.wasm, options).map_err(|e| e.to_string())?;
         compile.push(t.elapsed());
         let mut store = Store::default();
         let inst = Linker::new()
@@ -196,24 +199,30 @@ fn main() -> ExitCode {
         }
     );
     println!();
-    println!("| workload | what | n | result | wasmlet exec ms | wasmi exec ms | wasmlet / wasmi | wasmlet compile ms | wasmi compile ms |");
-    println!("|---|---|---:|---|---:|---:|---:|---:|---:|");
+    println!("| workload | what | n | result | wasmlet ms | wasmlet no-fusion ms | wasmi ms | wasmlet / wasmi | fusion speedup | wasmlet compile ms | wasmi compile ms |");
+    println!("|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|");
     let mut ok = true;
-    let mut ratios = Vec::new();
+    let (mut ratios, mut speedups) = (Vec::new(), Vec::new());
     for w in workloads() {
         let arg = if quick { w.quick_arg } else { w.arg };
-        let a = run_wasmlet(&w, arg, runs);
-        let b = run_wasmi(&w, arg, runs);
-        match (a, b) {
-            (Ok((ca, ea, ra)), Ok((cb, eb, rb))) => {
-                if ra != rb {
+        let fused = run_wasmlet(&w, arg, runs, true);
+        let plain = run_wasmlet(&w, arg, runs, false);
+        let theirs = run_wasmi(&w, arg, runs);
+        match (fused, plain, theirs) {
+            (Ok((ca, ea, ra)), Ok((_, ep, rp)), Ok((cb, eb, rb))) => {
+                if ra != rb || rp != rb {
                     ok = false;
-                    eprintln!("MISMATCH in {}: wasmlet={ra} wasmi={rb}", w.name);
+                    eprintln!(
+                        "MISMATCH in {}: wasmlet={ra} no-fusion={rp} wasmi={rb}",
+                        w.name
+                    );
                 }
                 let ratio = ea.as_secs_f64() / eb.as_secs_f64().max(1e-9);
+                let speedup = ep.as_secs_f64() / ea.as_secs_f64().max(1e-9);
                 ratios.push(ratio);
+                speedups.push(speedup);
                 println!(
-                    "| {} | {} | {} | {} | {:.2} | {:.2} | {:.2}x | {:.3} | {:.3} |",
+                    "| {} | {} | {} | {} | {:.2} | {:.2} | {:.2} | {:.2}x | {:.2}x | {:.3} | {:.3} |",
                     w.name,
                     w.what,
                     match arg {
@@ -222,23 +231,36 @@ fn main() -> ExitCode {
                     },
                     ra,
                     ms(ea),
+                    ms(ep),
                     ms(eb),
                     ratio,
+                    speedup,
                     ms(ca),
                     ms(cb)
                 );
             }
-            (a, b) => {
+            (a, p, b) => {
                 ok = false;
-                eprintln!("{}: wasmlet {:?} / wasmi {:?}", w.name, a.err(), b.err());
+                eprintln!(
+                    "{}: wasmlet {:?} / no-fusion {:?} / wasmi {:?}",
+                    w.name,
+                    a.err(),
+                    p.err(),
+                    b.err()
+                );
             }
         }
     }
+    let geo = |v: &[f64]| (v.iter().map(|r| r.ln()).sum::<f64>() / v.len().max(1) as f64).exp();
     if !ratios.is_empty() {
-        let geo = (ratios.iter().map(|r| r.ln()).sum::<f64>() / ratios.len() as f64).exp();
         println!();
         println!(
-            "geometric mean wasmlet/wasmi execution time: {geo:.2}x (lower is better for wasmlet)"
+            "geometric mean wasmlet/wasmi execution time: {:.2}x (lower is better for wasmlet)",
+            geo(&ratios)
+        );
+        println!(
+            "geometric mean speedup from superinstructions: {:.2}x",
+            geo(&speedups)
         );
     }
     if ok {
