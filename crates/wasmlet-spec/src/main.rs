@@ -1,7 +1,7 @@
 //! `wasmlet-spec`: run `.wast` scripts and print pass counts per file.
 //!
 //! ```text
-//! wasmlet-spec [--verbose] [--expect FILE] [--write-expect FILE] PATH...
+//! wasmlet-spec [--verbose] [--no-fuse] [--expect FILE] [--write-expect FILE] PATH...
 //! ```
 //!
 //! `PATH` may be a `.wast` file or a directory (all `*.wast` inside, sorted).
@@ -12,10 +12,12 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use wasmlet_spec::{run_file, FileReport};
+use wasmlet::CompileOptions;
+use wasmlet_spec::{run_file_with, FileReport};
 
 struct Args {
     verbose: bool,
+    no_fuse: bool,
     expect: Option<PathBuf>,
     write_expect: Option<PathBuf>,
     paths: Vec<PathBuf>,
@@ -24,6 +26,7 @@ struct Args {
 fn parse_args() -> Result<Args, String> {
     let mut args = Args {
         verbose: false,
+        no_fuse: false,
         expect: None,
         write_expect: None,
         paths: Vec::new(),
@@ -32,13 +35,14 @@ fn parse_args() -> Result<Args, String> {
     while let Some(a) = it.next() {
         match a.as_str() {
             "-v" | "--verbose" => args.verbose = true,
+            "--no-fuse" => args.no_fuse = true,
             "--expect" => args.expect = Some(it.next().ok_or("--expect needs a file")?.into()),
             "--write-expect" => {
                 args.write_expect = Some(it.next().ok_or("--write-expect needs a file")?.into())
             }
             "-h" | "--help" => {
                 return Err(
-                    "usage: wasmlet-spec [--verbose] [--expect FILE] [--write-expect FILE] PATH..."
+                    "usage: wasmlet-spec [--verbose] [--no-fuse] [--expect FILE] [--write-expect FILE] PATH..."
                         .into(),
                 )
             }
@@ -107,7 +111,10 @@ fn main() -> ExitCode {
     let mut reports: Vec<FileReport> = Vec::new();
     println!("{:<28} {:>13} {:>12}", "file", "passed/run", "");
     for f in &files {
-        let r = match run_file(f) {
+        let options = CompileOptions {
+            superinstructions: !args.no_fuse,
+        };
+        let r = match run_file_with(f, options) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("error reading {}: {e}", f.display());

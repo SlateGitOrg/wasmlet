@@ -1,20 +1,23 @@
 //! Runs the vendored WebAssembly 2.0 spec testsuite and checks every file
-//! against the committed baseline `tests/spec/expected.tsv`.
+//! against the committed baseline `tests/spec/expected.tsv`, once with the
+//! superinstruction pass (the default) and once without it.
 
 use std::path::Path;
 
-use wasmlet_spec::run_file;
+use wasmlet::CompileOptions;
+use wasmlet_spec::run_file_with;
 
-#[test]
-fn spec_suite_matches_baseline() {
+fn check(superinstructions: bool) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/spec");
     let baseline = std::fs::read_to_string(root.join("expected.tsv")).expect("baseline file");
+    let options = CompileOptions { superinstructions };
     let mut checked = 0;
     let mut total_passed = 0;
     for line in baseline.lines().filter(|l| !l.starts_with('#')) {
         let cols: Vec<&str> = line.split('\t').collect();
         let n = |i: usize| cols[i].parse::<usize>().expect("numeric column");
-        let report = run_file(&root.join("core").join(cols[0])).expect("readable script");
+        let report =
+            run_file_with(&root.join("core").join(cols[0]), options).expect("readable script");
         assert!(
             report.parse_error.is_none(),
             "{}: {:?}",
@@ -33,4 +36,14 @@ fn spec_suite_matches_baseline() {
     }
     assert_eq!(checked, 90, "every vendored script is in the baseline");
     assert!(total_passed > 27_000);
+}
+
+#[test]
+fn spec_suite_matches_baseline() {
+    check(true);
+}
+
+#[test]
+fn spec_suite_matches_baseline_without_superinstructions() {
+    check(false);
 }

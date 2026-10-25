@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use wasmlet::types::ValType;
 use wasmlet::wasi::{self, Output, WasiCtx};
-use wasmlet::{Config, Error, ExternType, Linker, Module, Store, Value};
+use wasmlet::{CompileOptions, Config, Error, ExternType, Linker, Module, Store, Value};
 
 const USAGE: &str = "\
 wasmlet — a WebAssembly 2.0 interpreter
@@ -28,7 +28,18 @@ RUN OPTIONS:
     --fuel <N>          stop with a trap after N branches/calls
     --deterministic     fixed clock and RNG for reproducible WASI runs
     --stats             print phase timings to stderr
+
+GLOBAL OPTIONS:
+    --no-fuse           compile without superinstructions (for comparison)
     -v, --verbose       debug logging to stderr";
+
+/// Set once from `--no-fuse` before any module is compiled.
+static NO_FUSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn compile(bytes: &[u8]) -> wasmlet::Result<Module> {
+    let superinstructions = !NO_FUSE.load(std::sync::atomic::Ordering::Relaxed);
+    Module::with_options(bytes, CompileOptions { superinstructions })
+}
 
 struct Logger;
 
@@ -107,7 +118,7 @@ fn run(opts: RunOpts) -> Result<ExitCode, String> {
     let file = opts.file.ok_or("run: missing FILE")?;
     let bytes = load(&file)?;
     let t0 = Instant::now();
-    let module = Module::new(&bytes).map_err(|e| e.to_string())?;
+    let module = compile(&bytes).map_err(|e| e.to_string())?;
     let t_compile = t0.elapsed();
     let mut store = Store::new(Config {
         fuel: opts.fuel,
@@ -183,7 +194,7 @@ fn run(opts: RunOpts) -> Result<ExitCode, String> {
 
 fn validate(file: &PathBuf) -> Result<ExitCode, String> {
     let bytes = load(file)?;
-    let module = Module::new(&bytes).map_err(|e| e.to_string())?;
+    let module = compile(&bytes).map_err(|e| e.to_string())?;
     let ops: usize = module.compiled_funcs().map(|f| f.code.len()).sum();
     println!(
         "valid: {} functions ({} imported), {} IR ops",
@@ -205,7 +216,7 @@ fn describe(t: &ExternType) -> String {
 
 fn inspect(file: &PathBuf, ir: bool) -> Result<ExitCode, String> {
     let bytes = load(file)?;
-    let module = Module::new(&bytes).map_err(|e| e.to_string())?;
+    let module = compile(&bytes).map_err(|e| e.to_string())?;
     println!("{}: {} bytes", file.display(), bytes.len());
     println!("imports:");
     for (m, n, t) in module.imports() {
@@ -243,7 +254,10 @@ fn inspect(file: &PathBuf, ir: bool) -> Result<ExitCode, String> {
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let verbose = args.iter().any(|a| a == "-v" || a == "--verbose");
-    args.retain(|a| a != "-v" && a != "--verbose");
+    if args.iter().any(|a| a == "--no-fuse") {
+        NO_FUSE.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    args.retain(|a| a != "-v" && a != "--verbose" && a != "--no-fuse");
     let level = if verbose {
         log::LevelFilter::Debug
     } else {

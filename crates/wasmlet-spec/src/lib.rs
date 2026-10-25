@@ -24,7 +24,7 @@ use std::fmt;
 use wasmlet::types::{
     FuncType, GlobalType, Limits, MemoryType, Mutability, RefType, TableType, ValType,
 };
-use wasmlet::{Error, Extern, Instance, Linker, Module, Store, Trap, Value};
+use wasmlet::{CompileOptions, Error, Extern, Instance, Linker, Module, Store, Trap, Value};
 use wast::core::{AbstractHeapType, HeapType, NanPattern, WastArgCore, WastRetCore};
 use wast::lexer::Lexer;
 use wast::parser::{self, ParseBuffer};
@@ -110,10 +110,11 @@ struct Runner {
     named: HashMap<String, Instance>,
     current: Option<Instance>,
     report: FileReport,
+    options: CompileOptions,
 }
 
 impl Runner {
-    fn new(name: &str) -> Runner {
+    fn new(name: &str, options: CompileOptions) -> Runner {
         let mut store = Store::default();
         let mut linker = Linker::new();
         define_spectest(&mut linker, &mut store);
@@ -126,6 +127,7 @@ impl Runner {
                 name: name.to_owned(),
                 ..FileReport::default()
             },
+            options,
         }
     }
 
@@ -141,7 +143,7 @@ impl Runner {
     }
 
     fn instantiate(&mut self, bytes: &[u8]) -> Result<Instance, Error> {
-        let module = Module::new(bytes)?;
+        let module = Module::with_options(bytes, self.options)?;
         self.linker.instantiate(&mut self.store, &module)
     }
 
@@ -255,7 +257,7 @@ impl Runner {
                     Ok(b) => b,
                     Err(_) => return Outcome::Skip("wast could not encode module"),
                 };
-                match Module::new(&bytes) {
+                match Module::with_options(&bytes, self.options) {
                     Ok(_) => Outcome::Fail(format!("expected invalid module ({message})")),
                     Err(Error::Validation(e)) => {
                         self.check_message(message, &e.message);
@@ -279,7 +281,7 @@ impl Runner {
                     }
                     Err(_) => return Outcome::Skip("wast could not encode module"),
                 };
-                match Module::new(&bytes) {
+                match Module::with_options(&bytes, self.options) {
                     Ok(_) => Outcome::Fail(format!("expected malformed module ({message})")),
                     Err(Error::Decode(e)) => {
                         self.check_message(message, &e.message);
@@ -301,7 +303,7 @@ impl Runner {
                     Ok(b) => b,
                     Err(_) => return Outcome::Skip("wast could not encode module"),
                 };
-                let module = match Module::new(&bytes) {
+                let module = match Module::with_options(&bytes, self.options) {
                     Ok(m) => m,
                     Err(e) => return Outcome::Fail(format!("module should validate: {e}")),
                 };
@@ -467,9 +469,14 @@ fn define_spectest(linker: &mut Linker, store: &mut Store) {
     linker.define("spectest", "memory", Extern::Memory(memory));
 }
 
-/// Runs one script given its source text.
+/// Runs one script given its source text, with default compile options.
 pub fn run_script(name: &str, source: &str) -> FileReport {
-    let mut runner = Runner::new(name);
+    run_script_with(name, source, CompileOptions::default())
+}
+
+/// Runs one script given its source text.
+pub fn run_script_with(name: &str, source: &str, options: CompileOptions) -> FileReport {
+    let mut runner = Runner::new(name, options);
     let mut lexer = Lexer::new(source);
     // names.wast deliberately uses bidi-control characters in export names.
     lexer.allow_confusing_unicode(true);
@@ -507,14 +514,22 @@ pub fn run_script(name: &str, source: &str) -> FileReport {
     runner.report
 }
 
-/// Runs one script file.
+/// Runs one script file with default compile options.
 pub fn run_file(path: &std::path::Path) -> std::io::Result<FileReport> {
+    run_file_with(path, CompileOptions::default())
+}
+
+/// Runs one script file.
+pub fn run_file_with(
+    path: &std::path::Path,
+    options: CompileOptions,
+) -> std::io::Result<FileReport> {
     let source = std::fs::read_to_string(path)?;
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    Ok(run_script(&name, &source))
+    Ok(run_script_with(&name, &source, options))
 }
 
 #[cfg(test)]

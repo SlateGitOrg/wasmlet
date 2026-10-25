@@ -128,6 +128,9 @@ fn validate_and_inspect() {
     );
     assert!(s.contains("memory: memory"), "{s}");
     assert!(s.contains("Store32"), "{s}");
+    let fused = text(&wasmlet(&["validate", &root("fixtures/wat/sieve.wat")]).stdout);
+    let plain = text(&wasmlet(&["validate", "--no-fuse", &root("fixtures/wat/sieve.wat")]).stdout);
+    assert_ne!(fused, plain, "superinstructions shorten the IR");
     let out = wasmlet(&["inspect", &root("fixtures/wat/fib.wat")]);
     assert!(
         text(&out.stdout).contains("custom section"),
