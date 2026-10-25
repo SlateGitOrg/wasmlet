@@ -188,9 +188,17 @@ the benchmark set the pass is worth 1.18x (geometric mean; see README).
   out-of-bounds `memory.copy`/`fill`/`init` traps without partial writes.
 * **Traps** are an enum whose `Display` matches the spec testsuite's
   messages. Integer division, remainder and float-to-int truncation follow
-  the spec's trapping rules; NaN results of float arithmetic are whatever
-  the host produces, which the spec permits (the tests' `nan:arithmetic`
-  patterns accept them).
+  the spec's trapping rules.
+* **NaN results** must be arithmetic NaNs (quiet bit set), and canonical when
+  every NaN input is canonical; the payload is otherwise free, which the
+  tests' `nan:arithmetic` patterns reflect. `+ - * /`, `sqrt` and float
+  conversions compile to FPU instructions that quiet NaNs on x86-64 and
+  AArch64, so their host result is used as is. Rounding (`ceil`, `floor`,
+  `trunc`, `nearest`) and `min`/`max` set the quiet bit themselves in
+  `num.rs` (`fround32`/`fround64`, `fmin*`/`fmax*`): Rust allows an operation
+  to return a signalling NaN unchanged, and portable `libm` rounding routines
+  do, which is how `f32.floor` of a signalling NaN once failed the spec suite
+  on x86-64 Linux.
 * **Fuel** (`Config::fuel`) charges one unit per executed branch (`br`,
   `br_if`, `br_table`, `if`) and call. Every loop iteration contains a
   branch, so any non-terminating guest runs out.
