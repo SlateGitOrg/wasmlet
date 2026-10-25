@@ -1,13 +1,13 @@
 //! Binary decoder: bytes -> [`RawModule`].
 //!
 //! Implements the binary format of the WebAssembly 2.0 core specification
-//! (MVP + multi-value + sign-extension + saturating truncation + bulk memory
-//! + reference types), without SIMD. Structural rules that the spec classifies
+//! (MVP, multi-value, sign-extension, saturating truncation, bulk memory and
+//! reference types), without SIMD. Structural rules that the spec classifies
 //! as "malformed" are enforced here; typing rules are left to the validator.
 
 use crate::ast::{
-    ConstExpr, Custom, Data, DataMode, Elem, ElemMode, Export, FuncBody, Global, Import, ImportDesc, Instr,
-    LoadKind, MemArg, RawModule, StoreKind,
+    ConstExpr, Custom, Data, DataMode, Elem, ElemMode, Export, FuncBody, Global, Import,
+    ImportDesc, Instr, LoadKind, MemArg, RawModule, StoreKind,
 };
 use crate::error::DecodeError;
 use crate::ops::NumOp;
@@ -57,10 +57,13 @@ pub fn decode(bytes: &[u8]) -> Result<RawModule, DecodeError> {
             });
             continue;
         }
-        let rank = section_rank(id)
-            .ok_or_else(|| DecodeError::new(id_offset, "malformed section id"))?;
+        let rank =
+            section_rank(id).ok_or_else(|| DecodeError::new(id_offset, "malformed section id"))?;
         if rank <= last_rank {
-            return Err(DecodeError::new(id_offset, "unexpected content after last section"));
+            return Err(DecodeError::new(
+                id_offset,
+                "unexpected content after last section",
+            ));
         }
         last_rank = rank;
         match id {
@@ -340,7 +343,12 @@ fn read_elem(r: &mut Reader<'_>) -> DResult<Elem> {
                 mode: ElemMode::Active { table, offset },
             }
         }
-        _ => return Err(DecodeError::new(r.offset(), "malformed elements segment kind")),
+        _ => {
+            return Err(DecodeError::new(
+                r.offset(),
+                "malformed elements segment kind",
+            ))
+        }
     };
     Ok(elem)
 }
@@ -418,7 +426,9 @@ fn read_body(r: &mut Reader<'_>, uses_data_count: &mut bool) -> DResult<FuncBody
 }
 
 fn read_block_type(r: &mut Reader<'_>) -> DResult<BlockType> {
-    let b = r.peek().ok_or_else(|| DecodeError::new(r.offset(), "unexpected end"))?;
+    let b = r
+        .peek()
+        .ok_or_else(|| DecodeError::new(r.offset(), "unexpected end"))?;
     if b == 0x40 {
         r.u8()?;
         return Ok(BlockType::Empty);
@@ -545,7 +555,10 @@ fn read_instr(r: &mut Reader<'_>, uses_data_count: &mut bool) -> DResult<Instr> 
         0xfc => {
             let sub = r.u32()?;
             match sub {
-                0..=7 => Num(NumOp::from_opcode(0xfc00 | sub as u16).expect("table covers 0xfc00..=0xfc07")),
+                0..=7 => {
+                    Num(NumOp::from_opcode(0xfc00 | sub as u16)
+                        .expect("table covers 0xfc00..=0xfc07"))
+                }
                 8 => {
                     *uses_data_count = true;
                     let d = r.u32()?;
@@ -608,9 +621,18 @@ mod tests {
     #[test]
     fn header_errors() {
         assert_eq!(decode(b"\0as").unwrap_err().message, "unexpected end");
-        assert_eq!(decode(b"\0wasm\x01\0\0").unwrap_err().message, "magic header not detected");
-        assert_eq!(decode(b"\0asm\x02\0\0\0").unwrap_err().message, "unknown binary version");
-        assert_eq!(decode(b"\0asm\x01\0").unwrap_err().message, "unexpected end");
+        assert_eq!(
+            decode(b"\0wasm\x01\0\0").unwrap_err().message,
+            "magic header not detected"
+        );
+        assert_eq!(
+            decode(b"\0asm\x02\0\0\0").unwrap_err().message,
+            "unknown binary version"
+        );
+        assert_eq!(
+            decode(b"\0asm\x01\0").unwrap_err().message,
+            "unexpected end"
+        );
     }
 
     #[test]
@@ -625,13 +647,21 @@ mod tests {
         assert_eq!(m.types[0].params(), &[ValType::I32]);
         assert_eq!(
             m.code[0].code,
-            vec![Instr::LocalGet(0), Instr::I32Const(1), Instr::Num(NumOp::I32Add), Instr::End]
+            vec![
+                Instr::LocalGet(0),
+                Instr::I32Const(1),
+                Instr::Num(NumOp::I32Add),
+                Instr::End
+            ]
         );
     }
 
     #[test]
     fn section_errors() {
-        assert_eq!(decode(&module(&[13, 0])).unwrap_err().message, "malformed section id");
+        assert_eq!(
+            decode(&module(&[13, 0])).unwrap_err().message,
+            "malformed section id"
+        );
         assert_eq!(
             decode(&module(&[3, 1, 0, 1, 1, 0])).unwrap_err().message,
             "unexpected content after last section"
@@ -640,7 +670,10 @@ mod tests {
             decode(&module(&[1, 2, 0, 0])).unwrap_err().message,
             "section size mismatch"
         );
-        assert_eq!(decode(&module(&[1, 5, 0])).unwrap_err().message, "length out of bounds");
+        assert_eq!(
+            decode(&module(&[1, 5, 0])).unwrap_err().message,
+            "length out of bounds"
+        );
         assert_eq!(
             decode(&module(&[3, 2, 1, 0])).unwrap_err().message,
             "function and code section have inconsistent lengths"
@@ -655,7 +688,13 @@ mod tests {
             "malformed UTF-8 encoding"
         );
         let m = decode(&module(&[0, 4, 1, b'x', 9, 9])).unwrap();
-        assert_eq!(m.customs, vec![Custom { name: "x".into(), len: 2 }]);
+        assert_eq!(
+            m.customs,
+            vec![Custom {
+                name: "x".into(),
+                len: 2
+            }]
+        );
     }
 
     #[test]
@@ -673,21 +712,32 @@ mod tests {
             decode(&with_code(&[2, 0, 0x01])).unwrap_err().message,
             "END opcode expected"
         );
-        assert_eq!(decode(&with_code(&[2, 0, 0xff])).unwrap_err().message, "illegal opcode");
         assert_eq!(
-            decode(&with_code(&[3, 0, 0x3f, 1, 0x0b])).unwrap_err().message,
+            decode(&with_code(&[2, 0, 0xff])).unwrap_err().message,
+            "illegal opcode"
+        );
+        assert_eq!(
+            decode(&with_code(&[3, 0, 0x3f, 1, 0x0b]))
+                .unwrap_err()
+                .message,
             "zero byte expected"
         );
         assert_eq!(
-            decode(&with_code(&[5, 0, 0xfc, 9, 0, 0x0b])).unwrap_err().message,
+            decode(&with_code(&[5, 0, 0xfc, 9, 0, 0x0b]))
+                .unwrap_err()
+                .message,
             "data count section required"
         );
         assert_eq!(
-            decode(&with_code(&[6, 1, 0xff, 0xff, 0xff, 0x7f, 0x7f])).unwrap_err().message,
+            decode(&with_code(&[6, 1, 0xff, 0xff, 0xff, 0x7f, 0x7f]))
+                .unwrap_err()
+                .message,
             "too many locals"
         );
         assert_eq!(
-            decode(&with_code(&[4, 0, 0x02, 0x7b, 0x0b])).unwrap_err().message,
+            decode(&with_code(&[4, 0, 0x02, 0x7b, 0x0b]))
+                .unwrap_err()
+                .message,
             "SIMD (v128) is not supported"
         );
     }
@@ -697,8 +747,9 @@ mod tests {
         // table + passive elem (flag 1) + declarative elem with exprs (flag 7)
         let bytes = module(&[
             1, 4, 1, 0x60, 0, 0, 3, 2, 1, 0, 4, 4, 1, 0x70, 0, 1, //
-            9, 10, 2, 1, 0, 1, 0, 7, 0x70, 1, 0xd2, 0, //
-            // missing final byte placeholder fixed below
+            9, 10, 2, 1, 0, 1, 0, 7, 0x70, 1, 0xd2,
+            0, //
+               // missing final byte placeholder fixed below
         ]);
         // The declarative expr above lacks its `end`; decoding must fail cleanly.
         assert!(decode(&bytes).is_err());

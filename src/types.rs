@@ -91,7 +91,12 @@ impl FuncType {
 
 impl fmt::Display for FuncType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let list = |xs: &[ValType]| xs.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(" ");
+        let list = |xs: &[ValType]| {
+            xs.iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
         write!(f, "[{}] -> [{}]", list(&self.params), list(&self.results))
     }
 }

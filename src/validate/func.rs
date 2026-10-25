@@ -83,7 +83,10 @@ pub(super) fn compile(c: &Context, type_idx: u32, body: &FuncBody) -> VResult<Co
     };
     for (i, instr) in body.code.iter().enumerate() {
         if comp.ctrls.is_empty() {
-            return Err(at(i, ValidationError::new("operators remaining after end of function")));
+            return Err(at(
+                i,
+                ValidationError::new("operators remaining after end of function"),
+            ));
         }
         comp.instr(instr).map_err(|e| at(i, e))?;
     }
@@ -126,7 +129,10 @@ impl Compiler<'_> {
     }
 
     fn pop(&mut self) -> VResult<MaybeType> {
-        let frame = self.ctrls.last().expect("control stack is non-empty while compiling");
+        let frame = self
+            .ctrls
+            .last()
+            .expect("control stack is non-empty while compiling");
         if self.vals.len() == frame.height {
             if frame.unreachable {
                 return Ok(None);
@@ -408,7 +414,9 @@ impl Compiler<'_> {
             }
             Instr::BrTable(targets) => {
                 self.pop_expect(I32)?;
-                let (default, rest) = targets.split_last().expect("decoder always stores a default");
+                let (default, rest) = targets
+                    .split_last()
+                    .expect("decoder always stores a default");
                 let df = self.label(*default)?;
                 let arity = self.ctrls[df].label_types().len();
                 self.emit(Op::BrTable {

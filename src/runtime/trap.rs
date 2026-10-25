@@ -68,7 +68,10 @@ mod tests {
             (Trap::TableOutOfBounds, "out of bounds table access"),
             (Trap::UndefinedElement, "undefined element"),
             (Trap::UninitializedElement, "uninitialized element"),
-            (Trap::IndirectCallTypeMismatch, "indirect call type mismatch"),
+            (
+                Trap::IndirectCallTypeMismatch,
+                "indirect call type mismatch",
+            ),
             (Trap::IntegerDivideByZero, "integer divide by zero"),
             (Trap::IntegerOverflow, "integer overflow"),
             (Trap::InvalidConversion, "invalid conversion to integer"),

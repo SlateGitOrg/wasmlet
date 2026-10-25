@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use super::exec;
-use super::store::{Extern, FuncInst, Global, GlobalInst, Instance, InstanceData, Memory, Store, Table};
+use super::store::{
+    Extern, FuncInst, Global, GlobalInst, Instance, InstanceData, Memory, Store, Table,
+};
 use super::value::Func;
 use crate::ast::{ConstExpr, DataMode, ElemMode, ImportDesc, Instr};
 use crate::error::{Error, LinkError, Result};
@@ -167,4 +169,3 @@ impl Store {
         Ok(Instance(instance_idx))
     }
 }
-

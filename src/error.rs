@@ -24,7 +24,11 @@ impl DecodeError {
 
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "malformed module at offset {:#x}: {}", self.offset, self.message)
+        write!(
+            f,
+            "malformed module at offset {:#x}: {}",
+            self.offset, self.message
+        )
     }
 }
 
@@ -144,12 +148,21 @@ mod tests {
     #[test]
     fn display_includes_context() {
         let d = DecodeError::new(0x10, "unexpected end");
-        assert_eq!(d.to_string(), "malformed module at offset 0x10: unexpected end");
+        assert_eq!(
+            d.to_string(),
+            "malformed module at offset 0x10: unexpected end"
+        );
         let mut v = ValidationError::new("type mismatch");
         v.func = Some(3);
         v.instr = Some(7);
-        assert_eq!(v.to_string(), "invalid module in function 3 at instruction 7: type mismatch");
-        let e: Error = LinkError { message: "unknown import".into() }.into();
+        assert_eq!(
+            v.to_string(),
+            "invalid module in function 3 at instruction 7: type mismatch"
+        );
+        let e: Error = LinkError {
+            message: "unknown import".into(),
+        }
+        .into();
         assert_eq!(e.to_string(), "link error: unknown import");
         let e: Error = Trap::Unreachable.into();
         assert_eq!(e.to_string(), "trap: unreachable");

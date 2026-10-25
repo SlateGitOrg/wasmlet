@@ -39,7 +39,13 @@ pub(crate) fn invoke(store: &mut Store, func: u32, args: &[u64]) -> Result<Vec<u
                 .zip(ty.params())
                 .map(|(&s, &t)| from_slot(s, t))
                 .collect();
-            let results = f(&mut Caller { store, instance: None }, &vals)?;
+            let results = f(
+                &mut Caller {
+                    store,
+                    instance: None,
+                },
+                &vals,
+            )?;
             check_host_results(ty.results(), &results)?;
             return Ok(results.into_iter().map(to_slot).collect());
         }
@@ -305,7 +311,11 @@ fn execute(
                         return Err(Trap::CallStackExhausted);
                     }
                     let new_fp = sp - callee.params as usize;
-                    ensure_stack(stack, new_fp + callee.params as usize + callee.frame_size(), max_stack)?;
+                    ensure_stack(
+                        stack,
+                        new_fp + callee.params as usize + callee.frame_size(),
+                        max_stack,
+                    )?;
                     let locals = callee.locals as usize;
                     frames.push(Frame {
                         func: std::mem::replace(&mut func, callee),
@@ -444,16 +454,22 @@ fn execute(
                 let v = pop!();
                 let i = pop!() as u32;
                 let tab = &mut store.tables[inst.table_addrs[t as usize] as usize];
-                *tab.elems.get_mut(i as usize).ok_or(Trap::TableOutOfBounds)? = v;
+                *tab.elems
+                    .get_mut(i as usize)
+                    .ok_or(Trap::TableOutOfBounds)? = v;
             }
             Op::TableSize(t) => {
-                push!(store.tables[inst.table_addrs[t as usize] as usize].elems.len() as u64)
+                push!(store.tables[inst.table_addrs[t as usize] as usize]
+                    .elems
+                    .len() as u64)
             }
             Op::TableGrow(t) => {
                 let n = pop!() as u32;
                 let init = pop!();
                 let tab = &mut store.tables[inst.table_addrs[t as usize] as usize];
-                push!(fu32(grow_table(tab, n, init, table_cap).unwrap_or(u32::MAX)));
+                push!(fu32(
+                    grow_table(tab, n, init, table_cap).unwrap_or(u32::MAX)
+                ));
             }
             Op::TableFill(t) => {
                 let n = pop!() as u32;
@@ -469,7 +485,10 @@ fn execute(
                 let n = pop!() as u32;
                 let s = pop!() as u32;
                 let d = pop!() as u32;
-                let (dt, st) = (inst.table_addrs[dst as usize], inst.table_addrs[src as usize]);
+                let (dt, st) = (
+                    inst.table_addrs[dst as usize],
+                    inst.table_addrs[src as usize],
+                );
                 table_copy(store, dt, st, d, s, n)?;
             }
             Op::TableInit { elem, table } => {
@@ -501,7 +520,14 @@ fn execute(
                 let n = pop!() as u32;
                 let s = pop!() as u32;
                 let d = pop!() as u32;
-                memory_init(store, mem as u32, inst.data_addrs[x as usize] as usize, d, s, n)?;
+                memory_init(
+                    store,
+                    mem as u32,
+                    inst.data_addrs[x as usize] as usize,
+                    d,
+                    s,
+                    n,
+                )?;
             }
             Op::DataDrop(x) => store.datas[inst.data_addrs[x as usize] as usize] = Arc::from([]),
             Op::MemoryCopy => {

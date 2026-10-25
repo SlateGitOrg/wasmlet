@@ -75,7 +75,9 @@ impl Module {
 
     /// Exports as `(name, type)`.
     pub fn exports(&self) -> impl Iterator<Item = (&str, ExternType)> + '_ {
-        self.exports.iter().map(|e| (e.name.as_str(), self.extern_type(e.kind, e.index)))
+        self.exports
+            .iter()
+            .map(|e| (e.name.as_str(), self.extern_type(e.kind, e.index)))
     }
 
     fn extern_type(&self, kind: ExternKind, index: u32) -> ExternType {

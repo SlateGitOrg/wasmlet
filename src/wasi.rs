@@ -126,7 +126,9 @@ impl WasiCtx {
                 out.write_all(bytes).map_err(|_| errno::BADF)?;
                 out.flush().map_err(|_| errno::BADF)?;
             }
-            (2, Output::Inherit) => std::io::stderr().write_all(bytes).map_err(|_| errno::BADF)?,
+            (2, Output::Inherit) => std::io::stderr()
+                .write_all(bytes)
+                .map_err(|_| errno::BADF)?,
             _ => return Err(errno::BADF),
         }
         Ok(())
@@ -198,7 +200,10 @@ fn iovecs(m: &[u8], iovs: i32, n: i32) -> Result<Vec<(i32, usize)>, i32> {
     (0..n as u32)
         .map(|i| {
             let base = iovs.wrapping_add((i * 8) as i32);
-            Ok((get_u32(m, base)? as i32, get_u32(m, base.wrapping_add(4))? as usize))
+            Ok((
+                get_u32(m, base)? as i32,
+                get_u32(m, base.wrapping_add(4))? as usize,
+            ))
         })
         .collect()
 }
@@ -224,7 +229,10 @@ fn put_string_list(m: &mut [u8], ptrs: i32, buf: i32, items: &[String]) -> Resul
 }
 
 fn sizes(items: &[String]) -> (u32, u32) {
-    (items.len() as u32, items.iter().map(|s| s.len() as u32 + 1).sum())
+    (
+        items.len() as u32,
+        items.iter().map(|s| s.len() as u32 + 1).sum(),
+    )
 }
 
 fn arg(args: &[Value], i: usize) -> i32 {
@@ -244,31 +252,61 @@ pub fn add_to_linker(linker: &mut Linker, store: &mut Store, ctx: Rc<RefCell<Was
     macro_rules! def {
         ($name:literal, $params:expr, $results:expr, |$c:ident, $caller:ident, $a:ident| $body:expr) => {{
             let $c = Rc::clone(&ctx);
-            linker.func(store, MODULE, $name, ty(&$params, &$results), move |$caller, $a| {
-                let r: WasiResult = $body;
-                r.map(|e| vec![Value::I32(e)])
-            });
+            linker.func(
+                store,
+                MODULE,
+                $name,
+                ty(&$params, &$results),
+                move |$caller, $a| {
+                    let r: WasiResult = $body;
+                    r.map(|e| vec![Value::I32(e)])
+                },
+            );
         }};
     }
 
     def!("args_sizes_get", [I32, I32], [I32], |c, caller, a| {
         let (n, len) = sizes(&c.borrow().args);
         let m = mem(caller)?;
-        Ok(errno_of(put_u32(m, arg(a, 0), n).and_then(|_| put_u32(m, arg(a, 1), len))))
+        Ok(errno_of(
+            put_u32(m, arg(a, 0), n).and_then(|_| put_u32(m, arg(a, 1), len)),
+        ))
     });
     def!("args_get", [I32, I32], [I32], |c, caller, a| {
         let items = c.borrow().args.clone();
-        Ok(errno_of(put_string_list(mem(caller)?, arg(a, 0), arg(a, 1), &items)))
+        Ok(errno_of(put_string_list(
+            mem(caller)?,
+            arg(a, 0),
+            arg(a, 1),
+            &items,
+        )))
     });
     def!("environ_sizes_get", [I32, I32], [I32], |c, caller, a| {
-        let items: Vec<String> = c.borrow().env.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        let items: Vec<String> = c
+            .borrow()
+            .env
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
         let (n, len) = sizes(&items);
         let m = mem(caller)?;
-        Ok(errno_of(put_u32(m, arg(a, 0), n).and_then(|_| put_u32(m, arg(a, 1), len))))
+        Ok(errno_of(
+            put_u32(m, arg(a, 0), n).and_then(|_| put_u32(m, arg(a, 1), len)),
+        ))
     });
     def!("environ_get", [I32, I32], [I32], |c, caller, a| {
-        let items: Vec<String> = c.borrow().env.iter().map(|(k, v)| format!("{k}={v}")).collect();
-        Ok(errno_of(put_string_list(mem(caller)?, arg(a, 0), arg(a, 1), &items)))
+        let items: Vec<String> = c
+            .borrow()
+            .env
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        Ok(errno_of(put_string_list(
+            mem(caller)?,
+            arg(a, 0),
+            arg(a, 1),
+            &items,
+        )))
     });
     def!("fd_write", [I32, I32, I32, I32], [I32], |c, caller, a| {
         let (fd, iovs, n, out) = (arg(a, 0), arg(a, 1), arg(a, 2), arg(a, 3));
@@ -339,10 +377,15 @@ pub fn add_to_linker(linker: &mut Linker, store: &mut Store, ctx: Rc<RefCell<Was
         });
         Ok(errno_of(r))
     });
-    def!("fd_prestat_get", [I32, I32], [I32], |_c, _caller, _a| Ok(errno::BADF));
-    def!("fd_prestat_dir_name", [I32, I32, I32], [I32], |_c, _caller, _a| {
-        Ok(errno::BADF)
-    });
+    def!("fd_prestat_get", [I32, I32], [I32], |_c, _caller, _a| Ok(
+        errno::BADF
+    ));
+    def!(
+        "fd_prestat_dir_name",
+        [I32, I32, I32],
+        [I32],
+        |_c, _caller, _a| { Ok(errno::BADF) }
+    );
     def!("clock_time_get", [I32, I64, I32], [I32], |c, caller, a| {
         let t = c.borrow_mut().now_ns(arg(a, 0));
         let m = mem(caller)?;
@@ -363,30 +406,34 @@ pub fn add_to_linker(linker: &mut Linker, store: &mut Store, ctx: Rc<RefCell<Was
         });
         Ok(errno_of(r))
     });
-    def!("sched_yield", [], [I32], |_c, _caller, _a| Ok(errno::SUCCESS));
+    def!("sched_yield", [], [I32], |_c, _caller, _a| Ok(
+        errno::SUCCESS
+    ));
     linker.func(store, MODULE, "proc_exit", ty(&[I32], &[]), |_, a| {
         Err(Trap::Exit(arg(a, 0)))
     });
 
-    linker.set_fallback(Box::new(|store: &mut Store, module: &str, name: &str, ty: &ExternType| {
-        let ExternType::Func(ft) = ty else {
-            return None;
-        };
-        if module != MODULE {
-            return None;
-        }
-        log::warn!("WASI function `{name}` is not implemented; linking an ENOSYS stub");
-        let returns_errno = ft.results() == [ValType::I32];
-        let name = name.to_owned();
-        let f = store.func_new(ft.clone(), move |_, _| {
-            if returns_errno {
-                Ok(vec![Value::I32(errno::NOSYS)])
-            } else {
-                Err(Trap::Host(format!("unsupported WASI function `{name}`")))
+    linker.set_fallback(Box::new(
+        |store: &mut Store, module: &str, name: &str, ty: &ExternType| {
+            let ExternType::Func(ft) = ty else {
+                return None;
+            };
+            if module != MODULE {
+                return None;
             }
-        });
-        Some(Extern::Func(f))
-    }));
+            log::warn!("WASI function `{name}` is not implemented; linking an ENOSYS stub");
+            let returns_errno = ft.results() == [ValType::I32];
+            let name = name.to_owned();
+            let f = store.func_new(ft.clone(), move |_, _| {
+                if returns_errno {
+                    Ok(vec![Value::I32(errno::NOSYS)])
+                } else {
+                    Err(Trap::Host(format!("unsupported WASI function `{name}`")))
+                }
+            });
+            Some(Extern::Func(f))
+        },
+    ));
 }
 
 /// Outcome of running a WASI command.

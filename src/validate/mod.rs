@@ -12,8 +12,7 @@ use crate::ast::{ConstExpr, DataMode, ElemMode, ImportDesc, Instr, RawModule};
 use crate::error::ValidationError;
 use crate::module::Module;
 use crate::types::{
-    ExternKind, FuncType, GlobalType, Limits, MemoryType, Mutability, TableType, ValType,
-    MAX_PAGES,
+    ExternKind, FuncType, GlobalType, Limits, MemoryType, Mutability, TableType, ValType, MAX_PAGES,
 };
 
 type VResult<T> = Result<T, ValidationError>;

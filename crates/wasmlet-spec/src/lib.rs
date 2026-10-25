@@ -21,7 +21,9 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use wasmlet::types::{FuncType, GlobalType, Limits, MemoryType, Mutability, RefType, TableType, ValType};
+use wasmlet::types::{
+    FuncType, GlobalType, Limits, MemoryType, Mutability, RefType, TableType, ValType,
+};
 use wasmlet::{Error, Extern, Instance, Linker, Module, Store, Trap, Value};
 use wast::core::{AbstractHeapType, HeapType, NanPattern, WastArgCore, WastRetCore};
 use wast::lexer::Lexer;
@@ -245,7 +247,9 @@ impl Runner {
                 Err(e) => Outcome::Fail(e),
             },
             WastDirective::AssertInvalid {
-                mut module, message, ..
+                mut module,
+                message,
+                ..
             } => {
                 let bytes = match module.encode() {
                     Ok(b) => b,
@@ -264,11 +268,15 @@ impl Runner {
                 }
             }
             WastDirective::AssertMalformed {
-                mut module, message, ..
+                mut module,
+                message,
+                ..
             } => {
                 let bytes = match module.to_test() {
                     Ok(QuoteWatTest::Binary(b)) => b,
-                    Ok(QuoteWatTest::Text(_)) => return Outcome::Skip("text-format malformed module"),
+                    Ok(QuoteWatTest::Text(_)) => {
+                        return Outcome::Skip("text-format malformed module")
+                    }
                     Err(_) => return Outcome::Skip("wast could not encode module"),
                 };
                 match Module::new(&bytes) {
@@ -285,7 +293,9 @@ impl Runner {
                 }
             }
             WastDirective::AssertUnlinkable {
-                mut module, message, ..
+                mut module,
+                message,
+                ..
             } => {
                 let bytes = match module.encode() {
                     Ok(b) => b,
@@ -304,12 +314,15 @@ impl Runner {
                     Ok(_) => Outcome::Fail(format!("expected link error ({message})")),
                 }
             }
-            WastDirective::AssertInvalidCustom { .. } | WastDirective::AssertMalformedCustom { .. } => {
+            WastDirective::AssertInvalidCustom { .. }
+            | WastDirective::AssertMalformedCustom { .. } => {
                 Outcome::Skip("custom-section assertions")
             }
             WastDirective::AssertException { .. } => Outcome::Skip("exception handling proposal"),
             WastDirective::AssertSuspension { .. } => Outcome::Skip("stack switching proposal"),
-            WastDirective::Thread(_) | WastDirective::Wait { .. } => Outcome::Skip("threads proposal"),
+            WastDirective::Thread(_) | WastDirective::Wait { .. } => {
+                Outcome::Skip("threads proposal")
+            }
         }
     }
 }
@@ -379,7 +392,10 @@ fn match_one(v: &Value, expected: &WastRetCore<'_>) -> bool {
 
 fn match_results(values: &[Value], expected: &[WastRet<'_>]) -> Outcome {
     if values.len() != expected.len() {
-        return Outcome::Fail(format!("expected {} results, got {values:?}", expected.len()));
+        return Outcome::Fail(format!(
+            "expected {} results, got {values:?}",
+            expected.len()
+        ));
     }
     for (v, e) in values.iter().zip(expected) {
         let WastRet::Core(e) = e else {
@@ -405,9 +421,13 @@ fn define_spectest(linker: &mut Linker, store: &mut Store) {
         ("print_f64_f64", &[F64, F64]),
     ];
     for (name, params) in prints {
-        linker.func(store, "spectest", name, FuncType::new(params.iter().copied(), []), |_, _| {
-            Ok(Vec::new())
-        });
+        linker.func(
+            store,
+            "spectest",
+            name,
+            FuncType::new(params.iter().copied(), []),
+            |_, _| Ok(Vec::new()),
+        );
     }
     let globals = [
         ("global_i32", Value::I32(666)),
@@ -438,7 +458,10 @@ fn define_spectest(linker: &mut Linker, store: &mut Store) {
     linker.define("spectest", "table", Extern::Table(table));
     let memory = store
         .memory_new(MemoryType {
-            limits: Limits { min: 1, max: Some(2) },
+            limits: Limits {
+                min: 1,
+                max: Some(2),
+            },
         })
         .expect("small memory");
     linker.define("spectest", "memory", Extern::Memory(memory));

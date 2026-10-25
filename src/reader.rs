@@ -18,7 +18,11 @@ pub(crate) type DResult<T> = Result<T, DecodeError>;
 
 impl<'a> Reader<'a> {
     pub(crate) fn new(bytes: &'a [u8], base: usize) -> Self {
-        Reader { bytes, pos: 0, base }
+        Reader {
+            bytes,
+            pos: 0,
+            base,
+        }
     }
 
     /// Absolute offset of the next unread byte.
@@ -217,11 +221,17 @@ mod tests {
         assert_eq!(r(&[0x80, 0x80, 0x80, 0x80, 0x78]).s32().unwrap(), i32::MIN);
         assert_eq!(r(&[0xff, 0xff, 0xff, 0xff, 0x7f]).s32().unwrap(), -1);
         assert_eq!(
-            r(&[0xff, 0xff, 0xff, 0xff, 0x0f]).s32().unwrap_err().message,
+            r(&[0xff, 0xff, 0xff, 0xff, 0x0f])
+                .s32()
+                .unwrap_err()
+                .message,
             "integer too large"
         );
         assert_eq!(
-            r(&[0x80, 0x80, 0x80, 0x80, 0x70]).s32().unwrap_err().message,
+            r(&[0x80, 0x80, 0x80, 0x80, 0x70])
+                .s32()
+                .unwrap_err()
+                .message,
             "integer too large"
         );
         let mut max64 = vec![0xff; 9];
@@ -234,20 +244,32 @@ mod tests {
         bad.push(0x01);
         assert_eq!(r(&bad).s64().unwrap_err().message, "integer too large");
         assert_eq!(r(&[0x40]).s33().unwrap(), -64);
-        assert_eq!(r(&[0xff, 0xff, 0xff, 0xff, 0x0f]).s33().unwrap(), u32::MAX as i64);
+        assert_eq!(
+            r(&[0xff, 0xff, 0xff, 0xff, 0x0f]).s33().unwrap(),
+            u32::MAX as i64
+        );
     }
 
     #[test]
     fn floats_names_and_counts() {
         assert_eq!(r(&[0, 0, 0x80, 0x3f]).f32_bits().unwrap(), 1.0f32.to_bits());
-        assert_eq!(r(&1.5f64.to_le_bytes()).f64_bits().unwrap(), 1.5f64.to_bits());
+        assert_eq!(
+            r(&1.5f64.to_le_bytes()).f64_bits().unwrap(),
+            1.5f64.to_bits()
+        );
         assert_eq!(r(&[2, b'h', b'i']).name().unwrap(), "hi");
         assert_eq!(
             r(&[2, 0xff, 0xfe]).name().unwrap_err().message,
             "malformed UTF-8 encoding"
         );
-        assert_eq!(r(&[9, 1]).name().unwrap_err().message, "length out of bounds");
-        assert_eq!(r(&[200, 1]).count(1).unwrap_err().message, "length out of bounds");
+        assert_eq!(
+            r(&[9, 1]).name().unwrap_err().message,
+            "length out of bounds"
+        );
+        assert_eq!(
+            r(&[200, 1]).count(1).unwrap_err().message,
+            "length out of bounds"
+        );
         let mut rd = Reader::new(&[1, 2, 3, 4], 10);
         let mut s = rd.sub(2).unwrap();
         assert_eq!(s.offset(), 10);

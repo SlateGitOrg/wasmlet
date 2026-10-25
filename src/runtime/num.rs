@@ -90,10 +90,34 @@ checked_trunc!(i32_trunc_f32_s, f32, i32, -2147483904.0f32, 2147483648.0f32);
 checked_trunc!(i32_trunc_f32_u, f32, u32, -1.0f32, 4294967296.0f32);
 checked_trunc!(i32_trunc_f64_s, f64, i32, -2147483649.0f64, 2147483648.0f64);
 checked_trunc!(i32_trunc_f64_u, f64, u32, -1.0f64, 4294967296.0f64);
-checked_trunc!(i64_trunc_f32_s, f32, i64, -9223373136366403584.0f32, 9223372036854775808.0f32);
-checked_trunc!(i64_trunc_f32_u, f32, u64, -1.0f32, 18446744073709551616.0f32);
-checked_trunc!(i64_trunc_f64_s, f64, i64, -9223372036854777856.0f64, 9223372036854775808.0f64);
-checked_trunc!(i64_trunc_f64_u, f64, u64, -1.0f64, 18446744073709551616.0f64);
+checked_trunc!(
+    i64_trunc_f32_s,
+    f32,
+    i64,
+    -9223373136366403584.0f32,
+    9223372036854775808.0f32
+);
+checked_trunc!(
+    i64_trunc_f32_u,
+    f32,
+    u64,
+    -1.0f32,
+    18446744073709551616.0f32
+);
+checked_trunc!(
+    i64_trunc_f64_s,
+    f64,
+    i64,
+    -9223372036854777856.0f64,
+    9223372036854775808.0f64
+);
+checked_trunc!(
+    i64_trunc_f64_u,
+    f64,
+    u64,
+    -1.0f64,
+    18446744073709551616.0f64
+);
 
 macro_rules! div_rem {
     ($div_s:ident, $div_u:ident, $rem_s:ident, $rem_u:ident, $s:ty, $u:ty) => {
@@ -176,10 +200,16 @@ mod tests {
         assert_eq!(i32_trunc_f64_u(4294967295.9), Ok(u32::MAX));
         assert_eq!(i32_trunc_f64_u(4294967296.0), Err(Trap::IntegerOverflow));
         assert_eq!(i64_trunc_f32_s(-9223372036854775808.0), Ok(i64::MIN));
-        assert_eq!(i64_trunc_f32_s(9223372036854775808.0), Err(Trap::IntegerOverflow));
+        assert_eq!(
+            i64_trunc_f32_s(9223372036854775808.0),
+            Err(Trap::IntegerOverflow)
+        );
         assert_eq!(i64_trunc_f64_s(-9223372036854775808.0), Ok(i64::MIN));
         assert_eq!(i64_trunc_f64_s(f64::INFINITY), Err(Trap::IntegerOverflow));
-        assert_eq!(i64_trunc_f32_u(18446742974197923840.0), Ok(18446742974197923840));
+        assert_eq!(
+            i64_trunc_f32_u(18446742974197923840.0),
+            Ok(18446742974197923840)
+        );
         assert_eq!(i64_trunc_f64_u(-0.5), Ok(0));
         assert_eq!(i64_trunc_f64_u(f64::NAN), Err(Trap::InvalidConversion));
     }

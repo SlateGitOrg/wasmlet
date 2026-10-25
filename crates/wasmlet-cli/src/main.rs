@@ -95,7 +95,11 @@ fn parse_value(text: &str, ty: ValType) -> Result<Value, String> {
         }
         ValType::F32 => Value::F32(text.parse().map_err(|_| bad())?),
         ValType::F64 => Value::F64(text.parse().map_err(|_| bad())?),
-        ValType::Ref(_) => return Err(format!("{ty} arguments are not supported on the command line")),
+        ValType::Ref(_) => {
+            return Err(format!(
+                "{ty} arguments are not supported on the command line"
+            ))
+        }
     })
 }
 
@@ -127,8 +131,12 @@ fn run(opts: RunOpts) -> Result<ExitCode, String> {
         let mut linker = Linker::new();
         let ctx = Rc::new(RefCell::new(WasiCtx::new().output(Output::Inherit)));
         wasi::add_to_linker(&mut linker, &mut store, ctx);
-        let instance = linker.instantiate(&mut store, &module).map_err(|e| e.to_string())?;
-        let func = store.instance_func(instance, name).map_err(|e| e.to_string())?;
+        let instance = linker
+            .instantiate(&mut store, &module)
+            .map_err(|e| e.to_string())?;
+        let func = store
+            .instance_func(instance, name)
+            .map_err(|e| e.to_string())?;
         let ty = store.func_type(func).clone();
         if ty.params().len() != opts.args.len() {
             return Err(format!(
@@ -219,7 +227,12 @@ fn inspect(file: &PathBuf, ir: bool) -> Result<ExitCode, String> {
             .func_type(f.type_idx)
             .map(|t| t.to_string())
             .unwrap_or_default();
-        println!("func {} {ty}: {} ops, max stack {}", base + i, f.code.len(), f.max_stack);
+        println!(
+            "func {} {ty}: {} ops, max stack {}",
+            base + i,
+            f.code.len(),
+            f.max_stack
+        );
         if ir {
             print!("{f}");
         }
@@ -285,7 +298,13 @@ fn parse_run(args: &[String]) -> Result<RunOpts, String> {
                 o.env.push((k.to_owned(), v.to_owned()));
             }
             "--stdin" => o.stdin = Some(value("--stdin")?.into()),
-            "--fuel" => o.fuel = Some(value("--fuel")?.parse().map_err(|_| "--fuel expects a number")?),
+            "--fuel" => {
+                o.fuel = Some(
+                    value("--fuel")?
+                        .parse()
+                        .map_err(|_| "--fuel expects a number")?,
+                )
+            }
             "--deterministic" => o.deterministic = true,
             "--stats" => o.stats = true,
             "--" => {}

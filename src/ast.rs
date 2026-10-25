@@ -4,7 +4,9 @@
 //! and lowers function bodies into the interpreter IR.
 
 use crate::ops::NumOp;
-use crate::types::{BlockType, ExternKind, FuncType, GlobalType, MemoryType, RefType, TableType, ValType};
+use crate::types::{
+    BlockType, ExternKind, FuncType, GlobalType, MemoryType, RefType, TableType, ValType,
+};
 
 /// Alignment exponent and static offset of a memory access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,7 +117,10 @@ pub enum Instr {
     BrTable(Box<[u32]>),
     Return,
     Call(u32),
-    CallIndirect { type_idx: u32, table: u32 },
+    CallIndirect {
+        type_idx: u32,
+        table: u32,
+    },
     Drop,
     /// `select` (untyped when `None`) or `select t*` (typed, always exactly
     /// the decoded type list; arity is checked by the validator).
@@ -130,8 +135,14 @@ pub enum Instr {
     TableSize(u32),
     TableGrow(u32),
     TableFill(u32),
-    TableCopy { dst: u32, src: u32 },
-    TableInit { elem: u32, table: u32 },
+    TableCopy {
+        dst: u32,
+        src: u32,
+    },
+    TableInit {
+        elem: u32,
+        table: u32,
+    },
     ElemDrop(u32),
     Load(LoadKind, MemArg),
     Store(StoreKind, MemArg),
@@ -316,6 +327,9 @@ pub struct RawModule {
 impl RawModule {
     /// Number of imports of the given kind.
     pub fn imported(&self, kind: ExternKind) -> usize {
-        self.imports.iter().filter(|i| i.desc.kind() == kind).count()
+        self.imports
+            .iter()
+            .filter(|i| i.desc.kind() == kind)
+            .count()
     }
 }

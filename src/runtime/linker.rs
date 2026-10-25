@@ -70,7 +70,9 @@ impl Linker {
 
     /// Looks up a definition.
     pub fn get(&self, module: &str, name: &str) -> Option<Extern> {
-        self.defs.get(&(module.to_owned(), name.to_owned())).copied()
+        self.defs
+            .get(&(module.to_owned(), name.to_owned()))
+            .copied()
     }
 
     /// Resolves all imports of `module` and instantiates it.

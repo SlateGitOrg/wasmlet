@@ -15,7 +15,12 @@ fn spec_suite_matches_baseline() {
         let cols: Vec<&str> = line.split('\t').collect();
         let n = |i: usize| cols[i].parse::<usize>().expect("numeric column");
         let report = run_file(&root.join("core").join(cols[0])).expect("readable script");
-        assert!(report.parse_error.is_none(), "{}: {:?}", cols[0], report.parse_error);
+        assert!(
+            report.parse_error.is_none(),
+            "{}: {:?}",
+            cols[0],
+            report.parse_error
+        );
         assert_eq!(
             (report.passed, report.failed, report.skipped),
             (n(1), n(2), n(3)),

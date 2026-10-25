@@ -10,7 +10,10 @@ use super::value::{from_slot, to_slot, Func, Value};
 use super::Trap;
 use crate::error::{Error, Result};
 use crate::ir::CompiledFunc;
-use crate::types::{FuncType, GlobalType, Limits, MemoryType, Mutability, RefType, TableType, ValType, MAX_PAGES, PAGE_SIZE};
+use crate::types::{
+    FuncType, GlobalType, Limits, MemoryType, Mutability, RefType, TableType, ValType, MAX_PAGES,
+    PAGE_SIZE,
+};
 
 /// Resource limits and execution settings.
 #[derive(Debug, Clone)]
@@ -51,7 +54,9 @@ pub struct Caller<'a> {
 
 impl fmt::Debug for Caller<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Caller").field("instance", &self.instance).finish()
+        f.debug_struct("Caller")
+            .field("instance", &self.instance)
+            .finish()
     }
 }
 
@@ -363,7 +368,11 @@ impl Store {
 
     /// Grows a memory by `delta` pages; returns the old size or `None`.
     pub fn memory_grow(&mut self, m: Memory, delta: u32) -> Option<u32> {
-        grow_memory(&mut self.memories[m.0 as usize], delta, self.config.max_memory_pages)
+        grow_memory(
+            &mut self.memories[m.0 as usize],
+            delta,
+            self.config.max_memory_pages,
+        )
     }
 
     /// Current type of a table (its size as `min`).
@@ -415,7 +424,9 @@ impl Store {
     /// Calls a function with type-checked arguments.
     pub fn invoke(&mut self, f: Func, args: &[Value]) -> Result<Vec<Value>> {
         let ty = self.func_type(f).clone();
-        if args.len() != ty.params().len() || args.iter().zip(ty.params()).any(|(a, t)| a.ty() != *t) {
+        if args.len() != ty.params().len()
+            || args.iter().zip(ty.params()).any(|(a, t)| a.ty() != *t)
+        {
             return Err(Error::Usage(format!(
                 "arguments do not match the function type {ty}"
             )));
@@ -476,7 +487,10 @@ mod tests {
         assert_eq!(s.func_type(f), &ty);
         assert_eq!(s.invoke(f, &[Value::I32(4)]).unwrap(), vec![Value::I32(4)]);
         assert!(matches!(s.invoke(f, &[]), Err(Error::Usage(_))));
-        assert!(matches!(s.invoke(f, &[Value::I64(1)]), Err(Error::Usage(_))));
+        assert!(matches!(
+            s.invoke(f, &[Value::I64(1)]),
+            Err(Error::Usage(_))
+        ));
 
         let gt = GlobalType {
             content: ValType::I64,
@@ -525,7 +539,10 @@ mod tests {
 
         let tt = TableType {
             elem: RefType::Extern,
-            limits: Limits { min: 2, max: Some(4) },
+            limits: Limits {
+                min: 2,
+                max: Some(4),
+            },
         };
         let t = s.table_new(tt, Value::ExternRef(Some(3))).unwrap();
         assert_eq!(s.table_get(t, 1), Some(Value::ExternRef(Some(3))));

@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/wasmlet-cli", "crates/wasmlet-spec"]
+members = [".", "crates/wasmlet-cli", "crates/wasmlet-spec", "crates/wasmlet-bench"]
 resolver = "2"
 exclude = ["fixtures/rust"]
 
@@ -7,7 +7,7 @@ exclude = ["fixtures/rust"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-rust-version = "1.80"
+rust-version = "1.85"
 repository = "https://github.com/archit2501/wasmlet"
 
 [workspace.dependencies]
