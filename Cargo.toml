@@ -1,5 +1,5 @@
 [workspace]
-members = ["."]
+members = [".", "crates/wasmlet-spec"]
 resolver = "2"
 
 [workspace.package]
@@ -12,7 +12,7 @@ repository = "https://github.com/archit2501/wasmlet"
 [workspace.dependencies]
 wasmlet = { path = "." }
 log = "0.4.29"
-wast = "262.0.0"
+wast = { version = "262.0.0", default-features = false, features = ["wasm-module"] }
 wat = "1.262.0"
 wasmparser = "0.262.0"
 wasm-smith = "0.262.0"

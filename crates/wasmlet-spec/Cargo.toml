@@ -1,0 +1,15 @@
+[package]
+name = "wasmlet-spec"
+description = "Runs the official WebAssembly .wast spec tests against wasmlet and reports pass counts per file."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+wasmlet.workspace = true
+wast.workspace = true
+
+[lints]
+workspace = true
