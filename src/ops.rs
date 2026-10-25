@@ -1,7 +1,7 @@
 //! The numeric instruction table.
 //!
 //! Every numeric instruction that takes no immediates is listed exactly once
-//! in [`for_each_numop!`] together with its opcode and type signature. Other
+//! in [`for_each_numop!`](crate::for_each_numop) together with its opcode and type signature. Other
 //! modules generate the decoder table, the validator signatures and the IR
 //! variants from this single list, so they cannot drift apart.
 

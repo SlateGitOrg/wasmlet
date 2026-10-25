@@ -1,0 +1,8 @@
+The interpreter reads the bytes,
+the validator checks the types,
+the stack machine runs the code,
+and every trap is named.
+The bytes are small, the stack is deep,
+the branch targets are resolved;
+the module runs, the module stops,
+the store keeps what it holds.
