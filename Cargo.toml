@@ -1,6 +1,7 @@
 [workspace]
-members = [".", "crates/wasmlet-spec"]
+members = [".", "crates/wasmlet-cli", "crates/wasmlet-spec"]
 resolver = "2"
+exclude = ["fixtures/rust"]
 
 [workspace.package]
 version = "0.1.0"

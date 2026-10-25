@@ -85,6 +85,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasmlet-cli"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "wasmlet",
+ "wat",
+]
+
+[[package]]
 name = "wasmlet-spec"
 version = "0.1.0"
 dependencies = [

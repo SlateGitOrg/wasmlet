@@ -1,0 +1,20 @@
+[package]
+name = "wasmlet-cli"
+description = "Command-line runner for the wasmlet WebAssembly interpreter."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "wasmlet"
+path = "src/main.rs"
+
+[dependencies]
+wasmlet.workspace = true
+wat.workspace = true
+log.workspace = true
+
+[lints]
+workspace = true
