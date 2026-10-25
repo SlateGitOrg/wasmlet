@@ -1,12 +1,58 @@
-//! Numeric semantics that differ from Rust's defaults: float min/max, NaN-
-//! and sign-exact bit operations, and checked float-to-int truncation.
+//! Numeric semantics that differ from Rust's defaults: NaN-quieting rounding,
+//! float min/max, NaN- and sign-exact bit operations, and checked float-to-int
+//! truncation.
 
 use super::Trap;
 
+const F32_QUIET: u32 = 0x0040_0000;
+const F64_QUIET: u64 = 0x0008_0000_0000_0000;
+
+// NaN results. The spec requires a float operation that returns a NaN to
+// return an *arithmetic* NaN (quiet bit set), and a canonical NaN when every
+// NaN input is canonical. Rust does not promise the first: an operation may
+// hand a signalling NaN input back unchanged. `+ - * /` and `sqrt` compile to FPU
+// instructions that quiet NaNs on x86-64 and AArch64, but rounding can go
+// through a library routine (`floorf` and friends), and the portable `libm`
+// implementations return a NaN input as is. On x86-64 Linux CI that made
+// `f32.floor` of a signalling NaN return a signalling NaN. So rounding and
+// min/max set the quiet bit themselves; OR-ing it in keeps the sign and
+// payload, and leaves a canonical NaN canonical.
+
+fn quiet32(a: f32) -> f32 {
+    f32::from_bits(a.to_bits() | F32_QUIET)
+}
+
+fn quiet64(a: f64) -> f64 {
+    f64::from_bits(a.to_bits() | F64_QUIET)
+}
+
+/// `f32.ceil`, `f32.floor`, `f32.trunc` and `f32.nearest`: `round` is the
+/// matching host function, which only ever sees non-NaN inputs.
+#[inline]
+pub(crate) fn fround32(a: f32, round: impl FnOnce(f32) -> f32) -> f32 {
+    if a.is_nan() {
+        quiet32(a)
+    } else {
+        round(a)
+    }
+}
+
+/// The `f64` counterpart of [`fround32`].
+#[inline]
+pub(crate) fn fround64(a: f64, round: impl FnOnce(f64) -> f64) -> f64 {
+    if a.is_nan() {
+        quiet64(a)
+    } else {
+        round(a)
+    }
+}
+
 pub(crate) fn fmin32(a: f32, b: f32) -> f32 {
-    if a.is_nan() || b.is_nan() {
-        // Any arithmetic on a NaN yields a quieted NaN, as the spec requires.
-        return a + b;
+    if a.is_nan() {
+        return quiet32(a);
+    }
+    if b.is_nan() {
+        return quiet32(b);
     }
     if a == b {
         // Distinguishes -0 and +0: min(-0, +0) = -0.
@@ -16,8 +62,11 @@ pub(crate) fn fmin32(a: f32, b: f32) -> f32 {
 }
 
 pub(crate) fn fmax32(a: f32, b: f32) -> f32 {
-    if a.is_nan() || b.is_nan() {
-        return a + b;
+    if a.is_nan() {
+        return quiet32(a);
+    }
+    if b.is_nan() {
+        return quiet32(b);
     }
     if a == b {
         return f32::from_bits(a.to_bits() & b.to_bits());
@@ -26,8 +75,11 @@ pub(crate) fn fmax32(a: f32, b: f32) -> f32 {
 }
 
 pub(crate) fn fmin64(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        return a + b;
+    if a.is_nan() {
+        return quiet64(a);
+    }
+    if b.is_nan() {
+        return quiet64(b);
     }
     if a == b {
         return f64::from_bits(a.to_bits() | b.to_bits());
@@ -36,8 +88,11 @@ pub(crate) fn fmin64(a: f64, b: f64) -> f64 {
 }
 
 pub(crate) fn fmax64(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() {
-        return a + b;
+    if a.is_nan() {
+        return quiet64(a);
+    }
+    if b.is_nan() {
+        return quiet64(b);
     }
     if a == b {
         return f64::from_bits(a.to_bits() & b.to_bits());
@@ -172,9 +227,54 @@ mod tests {
         assert_eq!(fmax64(1.0, 2.0), 2.0);
         assert_eq!(fmax32(3.0, 2.0), 3.0);
         assert_eq!(fmin64(3.0, 2.0), 2.0);
-        // Quiet bit is set on a propagated signalling NaN.
+        // Quiet bit is set on a propagated signalling NaN, from either side.
         let snan = f32::from_bits(0x7f80_0001);
-        assert_ne!(fmin32(snan, 1.0).to_bits() & 0x0040_0000, 0);
+        assert_eq!(fmin32(snan, 1.0).to_bits(), 0x7fc0_0001);
+        assert_eq!(fmax32(1.0, snan).to_bits(), 0x7fc0_0001);
+        let snan64 = f64::from_bits(0xfff0_0000_0000_0001);
+        assert_eq!(fmin64(2.0, snan64).to_bits(), 0xfff8_0000_0000_0001);
+        assert_eq!(fmax64(snan64, 2.0).to_bits(), 0xfff8_0000_0000_0001);
+    }
+
+    #[test]
+    fn rounding_returns_a_quiet_nan_whatever_the_host_does() {
+        // `|x| x` stands in for a host rounding routine that returns a NaN
+        // input unchanged, as the portable `libm` implementations do.
+        let rounds32: [fn(f32) -> f32; 5] = [
+            |x| x,
+            f32::ceil,
+            f32::floor,
+            f32::trunc,
+            f32::round_ties_even,
+        ];
+        for round in rounds32 {
+            // -nan:0x200000, a signalling NaN: quieted, sign and payload kept.
+            let snan = f32::from_bits(0xffa0_0000);
+            assert_eq!(fround32(snan, round).to_bits(), 0xffe0_0000);
+            // A canonical NaN stays canonical.
+            let canonical = f32::from_bits(0x7fc0_0000);
+            assert_eq!(fround32(canonical, round).to_bits(), 0x7fc0_0000);
+        }
+        let rounds64: [fn(f64) -> f64; 5] = [
+            |x| x,
+            f64::ceil,
+            f64::floor,
+            f64::trunc,
+            f64::round_ties_even,
+        ];
+        for round in rounds64 {
+            let snan = f64::from_bits(0x7ff4_0000_0000_0000);
+            assert_eq!(fround64(snan, round).to_bits(), 0x7ffc_0000_0000_0000);
+            let canonical = f64::from_bits(0xfff8_0000_0000_0000);
+            assert_eq!(fround64(canonical, round).to_bits(), 0xfff8_0000_0000_0000);
+        }
+        // Numbers, including signed zeros and ties, go through `round`.
+        assert_eq!(fround32(-1.5, f32::floor), -2.0);
+        assert_eq!(fround32(2.5, f32::round_ties_even), 2.0);
+        assert_eq!(fround32(-0.5, f32::ceil).to_bits(), (-0.0f32).to_bits());
+        assert_eq!(fround64(-2.7, f64::trunc), -2.0);
+        assert_eq!(fround64(0.5, f64::round_ties_even).to_bits(), 0);
+        assert_eq!(fround64(f64::NEG_INFINITY, f64::ceil), f64::NEG_INFINITY);
     }
 
     #[test]
