@@ -1,0 +1,50 @@
+# Decisions
+
+Rulings made while building wasmlet, in the form
+`Ruling: <what> — <why> — <cost if wrong>`.
+
+## Scope
+
+- Ruling: implement the whole WebAssembly 2.0 core spec except SIMD (MVP, multi-value, sign-extension, non-trapping float-to-int, bulk memory, reference types), not just the MVP plus the three proposals named in the brief — the official 2.0 testsuite mixes these features throughout (e.g. `ref.func` and multiple tables appear in `elem.wast`, `table_*.wast`, `bulk.wast`), so stopping at the MVP would leave whole files unrunnable; reference types cost little once bulk memory exists — more surface to keep correct; mitigated by the spec suite and the differential fuzzer.
+- Ruling: no SIMD and no post-2.0 proposals — 128-bit values would double the slot size or need paired slots, and SIMD is several hundred more opcodes — wasmlet cannot run code compiled with `-msimd128`; such modules are rejected cleanly at decode time.
+- Ruling: binary format only; `.wat` is converted with the `wat` crate in the CLI and tests, and the spec runner uses the `wast` crate to parse scripts and encode their modules — a text parser is a separate project and not what the brief asks for — the 581 text-format `assert_malformed` directives are skipped (reported per file, never counted as passes).
+- Ruling: a WASI preview1 subset (stdio, args, env, clocks, random, `proc_exit`, `sched_yield`) with no filesystem; unknown WASI imports link as `ENOSYS` stubs — enough for hello-world and stdin/stdout tools compiled by `rustc`, without designing a sandboxed filesystem — programs that open files fail at run time with an errno instead of failing to link.
+
+## Testsuite
+
+- Ruling: pin WebAssembly/spec branch `wg-2.0` at commit `fffc6e12fa454e475455a7b58d3b5dc343980c10`, `test/core/*.wast` (all 90 files, `simd/` excluded), and vendor it (3.5 MB) with SHA-256 sums — `make check` must work offline from a fresh clone, and a pinned snapshot makes the per-file baseline meaningful — the vendored copy can go stale relative to upstream fixes; `scripts/verify-spec.sh --upstream` re-checks it against the pinned commit.
+- Ruling: score each directive as passed, failed or skipped, and commit the per-file triple in `tests/spec/expected.tsv`; the test fails on any change — makes regressions and accidental "improvements" both visible — the baseline must be regenerated deliberately (`wasmlet-spec --write-expect`) when behaviour legitimately changes.
+- Ruling: rejection assertions (`assert_invalid`, `assert_malformed`, `assert_unlinkable`) pass when the module is rejected at the right stage; message agreement with the reference interpreter is reported separately (2,265/2,279) — the spec defines the stage, not the wording; matching wording everywhere would mean copying the OCaml interpreter's messages — a validator that rejects a module for the wrong reason at the right stage would still pass; the message-agreement number exposes how often wording differs.
+- Ruling: `assert_trap` requires a trap whose message matches by prefix in either direction — the reference interpreter appends details (e.g. `uninitialized element 2`) — a wrong trap with a coincidentally matching prefix would pass; trap kinds map one-to-one to messages, so this is unlikely.
+
+## Interpreter design
+
+- Ruling: validate and lower to IR in the same pass — the spec's validation algorithm already computes the stack height and frame of every branch, which is exactly what is needed to precompute branch targets and stack unwinding — the validator and code generator are coupled in one file (`validate/func.rs`, about 670 lines).
+- Ruling: a stack-machine IR over untyped 64-bit slots, not a register IR — simplest correct design, 16-byte ops, and validation already guarantees types — roughly 4x slower than wasmi's register IR on the benchmarks; a register IR is the main roadmap item.
+- Ruling: no native recursion for wasm-to-wasm calls (explicit frame vector) — deep guest recursion must end in a clean trap, not a host stack overflow; `skip-stack-guard-page.wast` exercises exactly this — slightly more bookkeeping per call than a recursive design.
+- Ruling: `#![forbid(unsafe_code)]` everywhere — memory safety must not depend on the validator being bug-free — every operand-stack and memory access is bounds-checked, a measurable part of the gap to wasmi.
+- Ruling: default limits of 50,000 call frames, 4 Mi value-stack slots (32 MiB), 16,384 memory pages (1 GiB) and 10 M table elements, all configurable in `Config` — generous enough for real programs while bounding host memory — a program needing more must raise them explicitly; growth beyond a cap returns -1 from `memory.grow`/`table.grow` (allowed by the spec) rather than trapping.
+- Ruling: fuel counts branches (`br`, `br_if`, `br_table`, `if`) and calls, not every instruction — any non-terminating program must branch, so this bounds run time at a fraction of the cost of per-instruction metering — fuel is not a precise instruction count; straight-line code between branches is free. (`if` was made to burn fuel when superinstructions were added, so that a fused compare-and-branch costs the same in both modes.)
+- Ruling: the `Store` is an arena that never frees objects; failed instantiations leave their allocations in place — matches the spec's store model, where effects of a failed instantiation on imported objects persist, and keeps handles as plain `Copy` indices — long-lived stores that instantiate many modules grow without bound; drop the store to reclaim.
+
+## Superinstructions
+
+- Ruling: fuse a small, conservative set of patterns (compare-and-branch, `local = local + imm`, constant operands, paired `local.get`) in a separate O(k) pass, switchable through `CompileOptions` — keeps the lowering readable and lets the benefit be measured and the transformation checked differentially — 1.18x geometric-mean speedup on the benchmark set, not more; further patterns were left for profile-driven work.
+- Ruling: never fuse across a branch target or into a `br_table` — a jump into the middle of a fused op would be unrepresentable — some fusion opportunities at loop heads are missed.
+- Ruling: tried and reverted compiling a fuel-free copy of the interpreter loop (const-generic `METERED`) — the benchmark showed no measurable difference, so it was not worth doubling the hot loop's code size — none measured.
+
+## Verification
+
+- Ruling: a deterministic, stable-toolchain fuzzer in the workspace (`crates/wasmlet-fuzz`) instead of `cargo fuzz` — no nightly toolchain is available here, and a seeded fuzzer can also run as a fast test in `make check` — it is not coverage-guided, so it explores less efficiently than libFuzzer; a `cargo fuzz` target reusing the same oracles is on the roadmap.
+- Ruling: use wasmparser's validator (WebAssembly 2.0 features minus SIMD) as the verdict oracle for mutated inputs — an independent, widely used implementation of the same rules — both could share a misreading of the spec; the official testsuite covers the same ground independently.
+- Ruling: use wasmi 2.0.0 as the execution oracle on `wasm-smith` modules, with NaN canonicalisation on and declared memory/table maxima so growth policy cannot differ; resource-limit outcomes on either side are *inconclusive*, never passes — fuel accounting and stack limits legitimately differ between engines — about 20% of generated modules are inconclusive (mostly loops that exhaust wasmlet's fuel), so those modules only get the no-panic and fused-vs-unfused checks.
+- Ruling: run the differential campaign on a thread with a 1 GiB stack — wasmi overflowed the default 8 MiB main-thread stack on some generated modules (observed during fuzzing; wasmlet itself does not recurse on guest calls) — a 1 GiB virtual reservation per campaign thread; physical memory is only committed as used.
+- Ruling: core-library coverage floor of 90% lines in `make check`, measured over unit, integration, CLI and spec-suite tests (excluding the fuzz and bench crates, so fuzz luck cannot inflate it) — the measured value is 98.5%, so the floor catches large regressions without flaking — tool-crate coverage is reported (`make coverage-report`) but not gated.
+- Ruling: benchmark wasmi with eager compilation and report medians of N runs, compile time separately, and the fused/unfused ablation — compares like with like (both engines translate everything before running) — on a shared machine single numbers vary by 10–20%; the README states the load.
+
+## Repository
+
+- Ruling: commit the three `rustc`-compiled guests (about 150 KB) and keep their sources plus `scripts/build-fixtures.sh` — tests and the demo must not need the `wasm32-wasip1` target — the binaries can drift from their sources if someone edits one without the other.
+- Ruling: the Makefile does not set `CARGO_TARGET_DIR`; cargo reads it (and `CARGO_BUILD_JOBS`) from the environment — no machine-specific paths in the repository — none.
+- Ruling: MSRV 1.85 (raised from 1.80) — `Option::is_none_or` and `iter::repeat_n` are used; clippy's `incompatible_msrv` lint enforces the declared value — users on older toolchains cannot build.
+- Ruling: CI mirrors `make check` in three jobs (quality, test, build) but has not run — the repository has not been pushed — the workflow could have a typo that only a first push will reveal.
