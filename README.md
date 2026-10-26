@@ -93,7 +93,7 @@ belongs to exactly one layer.
 | tools | `crates/wasmlet-cli`, `-spec`, `-fuzz`, `-bench` | CLI, `.wast` runner, fuzzer, benchmark |
 
 The algorithms and their complexity are in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); every design ruling, with the
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); every design decision, with the
 cost of it being wrong, is in [DECISIONS.md](DECISIONS.md).
 
 ## Quick start
@@ -439,7 +439,7 @@ tests/                embedding and WASI integration tests; vendored spec suite 
 fixtures/             .wat programs, rustc-compiled .wasm guests and their Rust sources
 scripts/              demo, fixture build, spec checksum and line-count scripts
 docs/ARCHITECTURE.md  algorithms and complexity
-DECISIONS.md          design rulings and their costs
+DECISIONS.md          design decisions and their costs
 DATA.md               provenance and licenses of vendored test data
 ```
 
